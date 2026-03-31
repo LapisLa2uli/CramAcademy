@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import "katex/dist/katex.min.css";
+
+:root {
+  --foreground: #0a0a0a;
+  --background: #fafafa;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium
+           py-2.5 px-5 rounded-lg transition-colors duration-150
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-white hover:bg-gray-50 text-gray-700 font-medium
+           py-2.5 px-5 rounded-lg border border-gray-300 transition-colors duration-150
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+  }
+
+  .input-field {
+    @apply w-full rounded-lg border border-gray-300 px-4 py-2.5
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500
+           placeholder-gray-400 transition-colors;
+  }
+
+  .card {
+    @apply bg-white rounded-xl border border-gray-200 shadow-sm;
+  }
+
+  /* Profile preview card — theme accents + equippable frames */
+  .profile-shell.profile-frame-bronze {
+    box-shadow: 0 0 0 3px #b87333, 0 1px 3px rgb(0 0 0 / 0.08);
+  }
+  .profile-shell.profile-frame-silver {
+    box-shadow: 0 0 0 3px #a8a8a8, 0 1px 3px rgb(0 0 0 / 0.08);
+  }
+  .profile-shell.profile-frame-gold {
+    box-shadow: 0 0 0 3px #d4af37, 0 1px 3px rgb(0 0 0 / 0.08);
+  }
+  .profile-theme-ocean .profile-accent {
+    color: #0ea5e9;
+  }
+  .profile-theme-midnight .profile-accent {
+    color: #a78bfa;
+  }
+  .profile-theme-aurora .profile-accent {
+    color: #10b981;
+  }
+}

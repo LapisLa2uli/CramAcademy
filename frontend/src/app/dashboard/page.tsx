@@ -1,0 +1,530 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
+import { api } from "@/lib/api";
+import TestConfigForm from "@/components/TestConfigForm";
+import type { CourseLevel, TestConfig } from "@/types";
+import { uploadQuestionImage } from "@/lib/questionImageUpload";
+import RubricTableEditor, {
+  defaultRubricRows,
+  buildRubricFromRows,
+} from "@/components/RubricTableEditor";
+
+const PdfQuestionFromPdfPanel = dynamic(
+  () => import("@/components/pdf/PdfQuestionFromPdfPanel"),
+  { ssr: false, loading: () => <p className="text-gray-500 text-sm">Loading PDF tools…</p> }
+);
+
+interface RecentTest {
+  id: string;
+  subject?: string;
+  difficulty?: string;
+  created_at: string;
+  finished_at?: string;
+}
+
+export default function DashboardPage() {
+  const { user } = useAuth();
+  const router = useRouter();
+  const [generating, setGenerating] = useState(false);
+  const [recentTests, setRecentTests] = useState<RecentTest[]>([]);
+  const [tab, setTab] = useState<"test" | "contribute">("test");
+  const [contributeMode, setContributeMode] = useState<"standard" | "pdf">("standard");
+
+  const handleGenerate = async (config: TestConfig) => {
+    setGenerating(true);
+    try {
+      const test = await api.tests.generate(config);
+      router.push(`/test/${test.id}`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to generate test");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  if (!user) {
+    return null;
+  }
+
+  return (
+    <>
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">Dashboard</h1>
+
+        {/* Tabs */}
+        <div className="flex gap-1 mb-8 bg-gray-100 p-1 rounded-lg w-fit">
+          <button
+            onClick={() => setTab("test")}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              tab === "test"
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Take a Test
+          </button>
+          <button
+            onClick={() => setTab("contribute")}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              tab === "contribute"
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Contribute Questions
+          </button>
+        </div>
+
+        {tab === "test" && (
+          <div className="grid lg:grid-cols-2 gap-10">
+            <TestConfigForm onSubmit={handleGenerate} loading={generating} />
+
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800 mb-4">Recent Tests</h2>
+              {recentTests.length === 0 ? (
+                <div className="card p-8 text-center text-gray-400">
+                  <p>No tests yet. Generate your first test!</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {recentTests.map((test) => (
+                    <Link
+                      key={test.id}
+                      href={test.finished_at ? `/results/${test.id}` : `/test/${test.id}`}
+                      className="card p-4 flex items-center justify-between hover:shadow-md transition-shadow block"
+                    >
+                      <div>
+                        <p className="font-medium text-gray-800">
+                          {test.subject || "Mixed"}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {new Date(test.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <span
+                        className={`text-xs font-medium px-2 py-1 rounded ${
+                          test.finished_at
+                            ? "bg-green-50 text-green-600"
+                            : "bg-yellow-50 text-yellow-600"
+                        }`}
+                      >
+                        {test.finished_at ? "Completed" : "In Progress"}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {tab === "contribute" && (
+          <div className="space-y-6">
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+              <button
+                type="button"
+                onClick={() => setContributeMode("standard")}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  contributeMode === "standard"
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Standard form
+              </button>
+              <button
+                type="button"
+                onClick={() => setContributeMode("pdf")}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  contributeMode === "pdf"
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                From PDF
+              </button>
+            </div>
+            {contributeMode === "standard" ? (
+              <QuestionSubmitForm />
+            ) : (
+              <PdfQuestionFromPdfPanel userId={user.id} />
+            )}
+          </div>
+        )}
+    </>
+  );
+}
+
+type OptionRow = {
+  label: string;
+  text: string;
+  file: File | null;
+  preview: string | null;
+};
+
+function freshOptions(): OptionRow[] {
+  return ["A", "B", "C", "D"].map((label) => ({
+    label,
+    text: "",
+    file: null,
+    preview: null,
+  }));
+}
+
+function QuestionSubmitForm() {
+  const { user } = useAuth();
+  const previewUrlsRef = useRef<string[]>([]);
+
+  const revokeAllPreviews = () => {
+    previewUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+    previewUrlsRef.current = [];
+  };
+
+  const trackPreview = (url: string | null) => {
+    if (url) previewUrlsRef.current.push(url);
+  };
+
+  const [type, setType] = useState<"mcq" | "frq">("mcq");
+  const [subject, setSubject] = useState("Mathematics");
+  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
+  const [courseLevel, setCourseLevel] = useState<CourseLevel | "">("");
+  const [gradeLevel, setGradeLevel] = useState<number | "">("");
+  const [content, setContent] = useState("");
+  const [stemFile, setStemFile] = useState<File | null>(null);
+  const [stemPreview, setStemPreview] = useState<string | null>(null);
+  const [answer, setAnswer] = useState("");
+  const [tags, setTags] = useState("");
+  const [options, setOptions] = useState<OptionRow[]>(freshOptions);
+  const [rubricRows, setRubricRows] = useState(() => defaultRubricRows());
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    return () => revokeAllPreviews();
+  }, []);
+
+  const setStemImage = (file: File | null) => {
+    if (stemPreview) {
+      URL.revokeObjectURL(stemPreview);
+      previewUrlsRef.current = previewUrlsRef.current.filter((u) => u !== stemPreview);
+    }
+    setStemFile(file);
+    if (file) {
+      const url = URL.createObjectURL(file);
+      trackPreview(url);
+      setStemPreview(url);
+    } else {
+      setStemPreview(null);
+    }
+  };
+
+  const setOptionFile = (index: number, file: File | null) => {
+    setOptions((prev) => {
+      const next = [...prev];
+      const row = next[index];
+      if (row.preview) {
+        URL.revokeObjectURL(row.preview);
+        previewUrlsRef.current = previewUrlsRef.current.filter((u) => u !== row.preview);
+      }
+      if (file) {
+        const url = URL.createObjectURL(file);
+        previewUrlsRef.current.push(url);
+        next[index] = { ...row, file, preview: url };
+      } else {
+        next[index] = { ...row, file: null, preview: null };
+      }
+      return next;
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.id) {
+      alert("You must be signed in to submit a question.");
+      return;
+    }
+
+    if (!content.trim() && !stemFile) {
+      alert("Add question text and/or a question image.");
+      return;
+    }
+
+    if (type === "mcq") {
+      for (const o of options) {
+        if (!o.text.trim() && !o.file) {
+          alert(`Option ${o.label} needs text and/or an image.`);
+          return;
+        }
+      }
+    }
+
+    let rubricObj: Record<string, unknown> | undefined;
+    if (type === "frq") {
+      rubricObj = buildRubricFromRows(rubricRows) ?? undefined;
+      if (!rubricObj) {
+        alert(
+          "Add at least one rubric row with name, expectations, and points (total must be > 0)."
+        );
+        return;
+      }
+    }
+
+    setLoading(true);
+    setSuccess(false);
+
+    try {
+      let question_image_url: string | undefined;
+      if (stemFile) {
+        question_image_url = await uploadQuestionImage(user.id, stemFile);
+      }
+
+      let mcqPayload: { label: string; text: string; image_url?: string }[] | undefined;
+      if (type === "mcq") {
+        mcqPayload = await Promise.all(
+          options.map(async (o) => {
+            let image_url: string | undefined;
+            if (o.file) {
+              image_url = await uploadQuestionImage(user.id, o.file);
+            }
+            return {
+              label: o.label,
+              text: o.text.trim(),
+              ...(image_url ? { image_url } : {}),
+            };
+          })
+        );
+      }
+
+      await api.questions.create({
+        type,
+        subject,
+        difficulty,
+        ...(courseLevel ? { course_level: courseLevel } : {}),
+        ...(gradeLevel !== "" ? { grade_level: Number(gradeLevel) } : {}),
+        content: content.trim(),
+        ...(question_image_url ? { question_image_url } : {}),
+        answer,
+        tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+        latex_enabled: content.includes("$"),
+        options: mcqPayload,
+        rubric: rubricObj,
+      });
+      setSuccess(true);
+      setContent("");
+      setAnswer("");
+      if (stemPreview) URL.revokeObjectURL(stemPreview);
+      options.forEach((o) => {
+        if (o.preview) URL.revokeObjectURL(o.preview);
+      });
+      previewUrlsRef.current = [];
+      setStemFile(null);
+      setStemPreview(null);
+      setOptions(freshOptions());
+      setRubricRows(defaultRubricRows());
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to submit question");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="card p-8 space-y-6 max-w-2xl">
+      <h2 className="text-xl font-semibold text-gray-800">Submit a Question</h2>
+      <p className="text-sm text-gray-500">
+        New questions are saved to your <strong>personal question bank</strong> (only you can see
+        them). From <strong>My question bank</strong> you can submit them for moderator review to
+        join the shared community pool. Images upload to Supabase Storage (max 5 MB,
+        JPEG/PNG/WebP/GIF).
+      </p>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value as "mcq" | "frq")}
+            className="input-field"
+          >
+            <option value="mcq">Multiple Choice</option>
+            <option value="frq">Free Response</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+          <input
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            className="input-field"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Difficulty</label>
+          <select
+            value={difficulty}
+            onChange={(e) => setDifficulty(e.target.value as "easy" | "medium" | "hard")}
+            className="input-field"
+          >
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Course level <span className="text-gray-400">(optional)</span>
+          </label>
+          <select
+            value={courseLevel}
+            onChange={(e) => setCourseLevel(e.target.value as CourseLevel | "")}
+            className="input-field"
+          >
+            <option value="">—</option>
+            <option value="S">S (Standard)</option>
+            <option value="S+">S+ (Standard+)</option>
+            <option value="H">H (Honors)</option>
+            <option value="H+">H+ (Honors+)</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Grade <span className="text-gray-400">(optional)</span>
+          </label>
+          <select
+            value={gradeLevel}
+            onChange={(e) =>
+              setGradeLevel(e.target.value === "" ? "" : Number(e.target.value))
+            }
+            className="input-field"
+          >
+            <option value="">—</option>
+            {[6, 7, 8, 9, 10, 11, 12].map((g) => (
+              <option key={g} value={g}>
+                Grade {g}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Question text{" "}
+          <span className="text-gray-400">(optional if you add an image; LaTeX: $...$)</span>
+        </label>
+        <textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          className="input-field min-h-[120px]"
+          placeholder="Enter the question text..."
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Question image <span className="text-gray-400">(optional)</span>
+        </label>
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="text-sm text-gray-600"
+          onChange={(e) => setStemImage(e.target.files?.[0] ?? null)}
+        />
+        {stemPreview && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={stemPreview}
+            alt="Preview"
+            className="mt-2 max-h-48 rounded border border-gray-200 object-contain"
+          />
+        )}
+      </div>
+
+      {type === "mcq" && (
+        <div className="space-y-4">
+          <label className="block text-sm font-medium text-gray-700">Options (text and/or image)</label>
+          {options.map((opt, i) => (
+            <div
+              key={opt.label}
+              className="rounded-lg border border-gray-200 p-3 space-y-2 bg-gray-50/50"
+            >
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-gray-500 w-6">{opt.label}.</span>
+                <input
+                  value={opt.text}
+                  onChange={(e) => {
+                    const next = [...options];
+                    next[i] = { ...opt, text: e.target.value };
+                    setOptions(next);
+                  }}
+                  className="input-field flex-1"
+                  placeholder={`Option ${opt.label} text`}
+                />
+              </div>
+              <div className="ml-8">
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="text-xs text-gray-600"
+                  onChange={(e) => setOptionFile(i, e.target.files?.[0] ?? null)}
+                />
+                {opt.preview && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={opt.preview}
+                    alt={`Preview ${opt.label}`}
+                    className="mt-2 max-h-32 rounded border border-gray-200 object-contain"
+                  />
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {type === "frq" && (
+        <RubricTableEditor rows={rubricRows} onChange={setRubricRows} />
+      )}
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Correct Answer {type === "mcq" && "(letter)"}
+        </label>
+        <input
+          value={answer}
+          onChange={(e) => setAnswer(e.target.value)}
+          required
+          className="input-field"
+          placeholder={type === "mcq" ? "A" : "Model answer or solution"}
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Tags <span className="text-gray-400">(comma-separated)</span>
+        </label>
+        <input
+          value={tags}
+          onChange={(e) => setTags(e.target.value)}
+          className="input-field"
+          placeholder="algebra, quadratic, factoring"
+        />
+      </div>
+
+      {success && (
+        <p className="text-sm text-green-600 bg-green-50 rounded-lg p-3">
+          Saved to your personal bank. Open <strong>My question bank</strong> to submit it for
+          community review.
+        </p>
+      )}
+
+      <button type="submit" disabled={loading} className="btn-primary">
+        {loading ? "Uploading & submitting..." : "Submit Question"}
+      </button>
+    </form>
+  );
+}
