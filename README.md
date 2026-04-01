@@ -27,16 +27,21 @@ CramAcademy/
 
 ## Features
 
-- **Dynamic Test Generation** — filter by subject, course level (S / S+ / H / H+), grade (6–12), difficulty, and count
+- **Dynamic Test Generation** — filter by subject, course level (S / S+ / H / H+), grade (6–12), difficulty, question pool (personal only, community only, or mixed), and count. When using **mixed** pools, the backend deduplicates by question ID so the same question never appears twice.
 - **Images** — optional question figure and per-choice images for MCQs (Supabase Storage)
-- **PDF import** — upload a multi-page PDF, draw regions for the question stem and (for MCQs) each choice; crops upload as PNGs. Uses the pdf.js worker from `unpkg.com` (needs network access in dev/build).
-- **Bluebook-Style UI** — fullscreen, distraction-free testing with timer and question navigation
-- **LaTeX Editor** — live two-panel rendering with KaTeX
+- **PDF / multi-image import** — upload a multi-page **PDF** or select **multiple images** (each file is one “page”). Draw color-coded regions for the question stem and (for MCQs) choices A–D; crops upload as PNGs. Region colors distinguish stem vs. A/B/C/D without on-canvas text labels. Uses the pdf.js worker from `unpkg.com` for PDFs (needs network access in dev/build).
+- **Question creation — LaTeX** — text fields that support `$...$` (stem, options, answers, captions, model answers) can show a **hover preview** of rendered math while you type.
+- **MCQ explanations** — optional **text** (LaTeX-capable) and/or **image** explanation per MCQ, shown on test results after grading. Older questions without an explanation are flagged in **My question bank**, **moderation queue**, and **community bank** with an orange “missing explanation” indicator (hover for tooltip).
+- **Bluebook-Style UI** — fullscreen, distraction-free testing with timer and question grid. **Previous** is hidden on the first question; **Next** is replaced by **Submit Test** on the last question (the top bar still offers Submit at any time).
+- **Test results** — total score, **percentage to two decimal places** (based on graded items), and per-question feedback.
+- **LaTeX Editor** — live two-panel rendering with KaTeX (FRQ answers when LaTeX is enabled)
 - **AI Grading** — rubric-based FRQ evaluation with structured JSON feedback
 - **Grade Appeals** — protest system with AI re-evaluation
 - **Roles** — `user` (default), `moderator` (validate/edit/delete questions), `admin` (same + manage accounts)
-- **Personal question bank** — new contributions stay private until you submit them for review; moderators publish them to the shared community pool
-- **User-Generated Questions** — submit questions and get credited when they're used in community tests
+- **Personal question bank** — new contributions stay private until you submit them for review. After a moderator **publishes** a question to the community pool, it **remains listed** in your bank as “Published” (it is no longer only “personal,” but you still see it alongside personal and pending items).
+- **Moderation** — review queue; **community bank** subpage to browse or remove published questions; **reject** with a fixed list of reasons. Choosing **Other** requires a **free-text explanation** (stored with the rejection reason for the author).
+- **Profiles & gamification** — account page with avatar, username, display name, bio, contribution heatmap, points, titles, and cosmetic themes/frames (see app). Header shows username and avatar.
+- **User-Generated Questions** — submit questions and earn contribution points when moderators approve community submissions
 - **MCQ + FRQ** — supports both multiple choice and free response
 
 ---
@@ -55,7 +60,13 @@ CramAcademy/
 ### 1. Supabase
 
 1. Create a project at [supabase.com](https://supabase.com)
-2. Go to **SQL Editor** and run the contents of `database/schema.sql` (new projects). If you already ran an older schema, run **`database/migration_images_levels.sql`** once (images / levels / storage), then **`database/migration_roles_question_pool.sql`** (roles, personal/community pools, RLS). If question submit fails with **PGRST204** / missing **`question_image_url`**, run **`database/patch_questions_app_columns.sql`** (idempotent).
+2. Go to **SQL Editor** and run the contents of `database/schema.sql` (new projects). If you already ran an older schema, apply any pending migrations in order, including:
+   - **`database/migration_images_levels.sql`** — images / levels / storage
+   - **`database/migration_roles_question_pool.sql`** — roles, personal/community pools, RLS
+   - **`database/migration_profile_contributions.sql`** — profiles (bio, points, cosmetics), contribution grants, `rejection_reason` on questions (if not already in schema)
+   - **`database/migration_explanations.sql`** — MCQ **`explanation`** and **`explanation_image_url`** columns on `questions`
+   - **`database/migration_username_avatar.sql`** — `username` (unique) and `avatar_url` on `profiles` (if not already in `schema.sql`)
+   If question submit fails with **PGRST204** / missing **`question_image_url`**, run **`database/patch_questions_app_columns.sql`** (idempotent). For existing DBs, apply only migrations you have not run yet; **`database/schema.sql`** is the full reference for a fresh Supabase project.
 3. Copy your project URL, anon key, and service role key
 4. After you create the first account (signup in the app), make an admin with: `UPDATE public.profiles SET role = 'admin' WHERE email = 'your@email.com';` Later admins can use the **Admin** page in the dashboard.
 
@@ -125,6 +136,8 @@ The app will be available at `http://localhost:3000`.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous key          |
 | `NEXT_PUBLIC_API_URL`           | Optional. Omit locally to use `/backend-api` proxy to FastAPI. Set for production (full URL, no trailing slash). |
 
+**Supabase project alignment:** `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in the frontend must refer to the **same** Supabase project as `SUPABASE_URL` / keys in the backend. If they differ, sign-in can succeed while API calls return **401 Invalid token**.
+
 ---
 
 ## API Endpoints
@@ -134,19 +147,24 @@ The app will be available at `http://localhost:3000`.
 | POST   | `/auth/signup`                    | Create account             |
 | POST   | `/auth/login`                     | Sign in                    |
 | GET    | `/auth/me`                        | Current profile + role     |
+| GET    | `/profile/me`                     | Full profile + title/level/points (auth) |
+| PATCH  | `/profile/me`                     | Update display name, bio, avatar, cosmetics |
+| GET    | `/profile/me/contributions`       | Contribution calendar (heatmap data) |
 | GET    | `/admin/users`                    | List users (admin)         |
 | PATCH  | `/admin/users/{id}`               | Update profile role/name (admin) |
 | DELETE | `/admin/users/{id}`               | Delete auth user (admin)   |
 | GET    | `/questions`                      | List published community questions |
-| GET    | `/questions/my-bank`              | Your personal + pending    |
+| GET    | `/questions/my-bank`              | All questions you created (personal, pending, published community) |
 | GET    | `/questions/moderation-queue`     | Pending review (mod/admin) |
+| GET    | `/questions/community-bank`     | Published community questions (mod/admin) |
+| GET    | `/questions/rejection-reasons`    | Fixed list of reject reason IDs/labels (for moderation UI) |
 | POST   | `/questions`                      | Create in personal bank    |
 | GET    | `/questions/{id}`                 | Get one (if allowed)       |
 | PATCH  | `/questions/{id}`                 | Edit (owner personal / staff) |
 | DELETE | `/questions/{id}`                 | Delete (rules per role)    |
 | POST   | `/questions/{id}/submit-for-review` | Send personal → moderation |
 | POST   | `/questions/{id}/approve`        | Publish (mod/admin)        |
-| POST   | `/questions/{id}/reject`         | Return to author’s bank  |
+| POST   | `/questions/{id}/reject`         | Return to author’s bank; body `{ "reason": "<id>", "explanation"?: "..." }` — **`explanation` required** when `reason` is `other` |
 | POST   | `/tests/generate`                 | Generate a test            |
 | GET    | `/tests/{id}`                     | Get test with questions    |
 | POST   | `/tests/{id}/start`               | Start test timer           |

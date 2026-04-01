@@ -74,10 +74,11 @@ export default function ResultsPage() {
   );
 
   const totalScore = submissions.reduce((acc, s) => acc + (s.score || 0), 0);
-  const maxPossible = submissions.length;
   const gradedCount = submissions.filter(
     (s) => s.score !== null && s.score !== undefined
   ).length;
+  const maxPossible = gradedCount > 0 ? gradedCount : 1;
+  const pctScore = gradedCount > 0 ? (totalScore / maxPossible) * 100 : 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -111,7 +112,11 @@ export default function ResultsPage() {
             </div>
             <div className="text-right">
               <p className="text-4xl font-bold text-primary-600">
-                {totalScore.toFixed(1)}
+                {totalScore.toFixed(1)}{" "}
+                <span className="text-xl text-gray-400 font-medium">/ {gradedCount}</span>
+              </p>
+              <p className="text-lg font-semibold text-gray-700">
+                {pctScore.toFixed(2)}%
               </p>
               <p className="text-sm text-gray-500">
                 {gradedCount}/{submissions.length} graded

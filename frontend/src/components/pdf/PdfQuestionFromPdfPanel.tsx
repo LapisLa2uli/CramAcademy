@@ -1,20 +1,24 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CourseLevel } from "@/types";
 import { api } from "@/lib/api";
 import { uploadQuestionImage } from "@/lib/questionImageUpload";
 import { cropPdfRegionToPng, type NormRect } from "@/lib/pdf/cropPdfPage";
+import { cropImageRegionToPng } from "@/lib/cropImageRegion";
 import PdfRegionWorkspace, {
   type RegionMode,
   MODE_LABELS,
+  REGION_COLORS,
 } from "./PdfRegionWorkspace";
+import ImageRegionWorkspace from "./ImageRegionWorkspace";
 import RubricTableEditor, {
   type RubricRow,
   defaultRubricRows,
   buildRubricFromRows,
 } from "../RubricTableEditor";
+import LatexHoverPreview from "../LatexHoverPreview";
 
 const CROP_SCALE = 2.5;
 
@@ -33,10 +37,12 @@ interface Props {
 
 export default function PdfQuestionFromPdfPanel({ userId }: Props) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
+  const [imagePages, setImagePages] = useState<string[]>([]);
+  const imgElsRef = useRef<Map<number, HTMLImageElement>>(new Map());
   const [numPages, setNumPages] = useState(0);
   const [page, setPage] = useState(1);
   const [viewScale] = useState(1.35);
-  const [pdfName, setPdfName] = useState("");
+  const [sourceLabel, setSourceLabel] = useState("");
 
   const [qType, setQType] = useState<"mcq" | "frq">("mcq");
   const [rects, setRects] = useState<Partial<Record<RegionMode, NormRect>>>({});
@@ -63,11 +69,19 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
     })();
   }, []);
 
-  const onPdfFile = async (file: File | null) => {
+  const clearSource = () => {
     setPdf(null);
+    imagePages.forEach((u) => URL.revokeObjectURL(u));
+    setImagePages([]);
+    imgElsRef.current.clear();
     setNumPages(0);
     setRects({});
     setMsg(null);
+    setSourceLabel("");
+  };
+
+  const onPdfFile = async (file: File | null) => {
+    clearSource();
     if (!file || file.type !== "application/pdf") {
       setMsg("Please choose a PDF file.");
       return;
@@ -79,10 +93,28 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
       setPdf(doc);
       setNumPages(doc.numPages);
       setPage(1);
-      setPdfName(file.name);
+      setSourceLabel(file.name);
     } catch {
       setMsg("Could not read this PDF.");
     }
+  };
+
+  const onImageFiles = (files: FileList | null) => {
+    clearSource();
+    if (!files || files.length === 0) return;
+    const urls: string[] = [];
+    for (let i = 0; i < files.length; i++) {
+      if (!files[i].type.startsWith("image/")) continue;
+      urls.push(URL.createObjectURL(files[i]));
+    }
+    if (urls.length === 0) {
+      setMsg("No valid image files selected.");
+      return;
+    }
+    setImagePages(urls);
+    setNumPages(urls.length);
+    setPage(1);
+    setSourceLabel(`${urls.length} image(s)`);
   };
 
   const setRect = useCallback((mode: RegionMode, rect: NormRect) => {
@@ -105,9 +137,18 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
     setDrawMode(null);
   };
 
+  const cropRegion = async (rect: NormRect): Promise<Blob> => {
+    if (pdf) {
+      return cropPdfRegionToPng(pdf, page, CROP_SCALE, rect);
+    }
+    const imgEl = imgElsRef.current.get(page);
+    if (!imgEl) throw new Error("Image element not loaded for this page");
+    return cropImageRegionToPng(imgEl, rect);
+  };
+
   const addToQueue = async () => {
-    if (!pdf) {
-      setMsg("Upload a PDF first.");
+    if (!pdf && imagePages.length === 0) {
+      setMsg("Upload a PDF or images first.");
       return;
     }
     if (!rects.stem) {
@@ -143,7 +184,7 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
     setBusy(true);
     setMsg(null);
     try {
-      const stemBlob = await cropPdfRegionToPng(pdf, page, CROP_SCALE, rects.stem);
+      const stemBlob = await cropRegion(rects.stem);
       const stemFile = new File([stemBlob], "stem.png", { type: "image/png" });
       const question_image_url = await uploadQuestionImage(userId, stemFile);
 
@@ -153,7 +194,7 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
         options = [];
         for (const L of labels) {
           const r = rects[L]!;
-          const blob = await cropPdfRegionToPng(pdf, page, CROP_SCALE, r);
+          const blob = await cropRegion(r);
           const f = new File([blob], `choice-${L}.png`, { type: "image/png" });
           const url = await uploadQuestionImage(userId, f);
           options.push({ label: L, text: "", image_url: url });
@@ -198,7 +239,7 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
           difficulty,
           ...(courseLevel ? { course_level: courseLevel } : {}),
           ...(gradeLevel !== "" ? { grade_level: Number(gradeLevel) } : {}),
-          content: item.content || "(From PDF)",
+          content: item.content || (pdf ? "(From PDF)" : "(From image)"),
           question_image_url: item.question_image_url,
           latex_enabled: item.content.includes("$"),
           answer: item.answer,
@@ -221,11 +262,11 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
   return (
     <div className="card p-8 space-y-8 max-w-5xl">
       <div>
-        <h2 className="text-xl font-semibold text-gray-800">Create questions from a PDF</h2>
+        <h2 className="text-xl font-semibold text-gray-800">Create questions from a PDF or images</h2>
         <p className="text-sm text-gray-500 mt-1">
-          Upload a multi-page PDF, pick a page, then drag rectangles on the preview. Mark the
-          question block, and for MCQs mark each choice (A–D). FRQs use the rubric table; type the
-          model answer. Add each question to the list, then submit all.
+          Upload a multi-page PDF or select multiple images, pick a page, then drag rectangles on the
+          preview. Mark the question block, and for MCQs mark each choice (A–D). FRQs use the rubric
+          table; type the model answer. Add each question to the list, then submit all.
         </p>
       </div>
 
@@ -238,7 +279,17 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
             className="text-sm"
             onChange={(e) => onPdfFile(e.target.files?.[0] ?? null)}
           />
-          {pdfName && <p className="text-xs text-gray-500">Loaded: {pdfName}</p>}
+          <label className="block text-sm font-medium text-gray-700 mt-2">
+            Or select images <span className="text-gray-400">(multi-select)</span>
+          </label>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            multiple
+            className="text-sm"
+            onChange={(e) => onImageFiles(e.target.files)}
+          />
+          {sourceLabel && <p className="text-xs text-gray-500">Loaded: {sourceLabel}</p>}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -265,7 +316,7 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
                 setDrawMode(null);
               }}
               className="input-field"
-              disabled={!pdf}
+              disabled={numPages === 0}
             >
               {Array.from({ length: numPages }, (_, i) => i + 1).map((p) => (
                 <option key={p} value={p}>
@@ -277,36 +328,31 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
         </div>
       </div>
 
-      {pdf && (
+      {(pdf || imagePages.length > 0) && (
         <>
           <div className="flex flex-wrap gap-2 items-center">
             <span className="text-sm text-gray-600 mr-2">Drawing mode:</span>
-            <button
-              type="button"
-              onClick={() => setDrawMode(drawMode === "stem" ? null : "stem")}
-              className={`text-sm px-3 py-1.5 rounded-lg border ${
-                drawMode === "stem"
-                  ? "bg-primary-600 text-white border-primary-600"
-                  : "bg-white border-gray-300"
-              }`}
-            >
-              {MODE_LABELS.stem}
-            </button>
-            {qType === "mcq" &&
-              (["A", "B", "C", "D"] as const).map((L) => (
-                <button
-                  key={L}
-                  type="button"
-                  onClick={() => setDrawMode(drawMode === L ? null : L)}
-                  className={`text-sm px-3 py-1.5 rounded-lg border ${
-                    drawMode === L
-                      ? "bg-primary-600 text-white border-primary-600"
-                      : "bg-white border-gray-300"
-                  }`}
-                >
-                  {MODE_LABELS[L]}
-                </button>
-              ))}
+            {(["stem", ...(qType === "mcq" ? ["A", "B", "C", "D"] : [])] as RegionMode[]).map(
+              (mode) => {
+                const active = drawMode === mode;
+                const c = REGION_COLORS[mode];
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setDrawMode(active ? null : mode)}
+                    className="text-sm px-3 py-1.5 rounded-lg border font-medium transition-colors"
+                    style={
+                      active
+                        ? { backgroundColor: c.border, color: "#fff", borderColor: c.border }
+                        : { borderColor: c.border, color: c.border, backgroundColor: c.bg }
+                    }
+                  >
+                    {MODE_LABELS[mode]}
+                  </button>
+                );
+              }
+            )}
             <button type="button" onClick={resetCurrentRegions} className="btn-secondary text-sm ml-2">
               Clear all regions
             </button>
@@ -317,15 +363,28 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
             </p>
           )}
 
-          <PdfRegionWorkspace
-            pdf={pdf}
-            pageNumber={page}
-            scale={viewScale}
-            rects={rects}
-            activeMode={drawMode}
-            onRectSet={setRect}
-            onClear={clearRect}
-          />
+          {pdf ? (
+            <PdfRegionWorkspace
+              pdf={pdf}
+              pageNumber={page}
+              scale={viewScale}
+              rects={rects}
+              activeMode={drawMode}
+              onRectSet={setRect}
+              onClear={clearRect}
+            />
+          ) : imagePages.length > 0 ? (
+            <ImageRegionWorkspace
+              src={imagePages[page - 1]}
+              rects={rects}
+              activeMode={drawMode}
+              onRectSet={setRect}
+              onClear={clearRect}
+              onImgRef={(el) => {
+                if (el) imgElsRef.current.set(page, el);
+              }}
+            />
+          ) : null}
         </>
       )}
 
@@ -386,12 +445,14 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
           <h3 className="font-medium text-gray-800">This question (before adding to list)</h3>
           <div>
             <label className="text-sm text-gray-600">Optional note / LaTeX (stored as text)</label>
-            <textarea
-              value={contentNote}
-              onChange={(e) => setContentNote(e.target.value)}
-              className="input-field min-h-[72px] mt-1"
-              placeholder="Optional short caption or math (e.g. $x^2$)"
-            />
+            <LatexHoverPreview value={contentNote}>
+              <textarea
+                value={contentNote}
+                onChange={(e) => setContentNote(e.target.value)}
+                className="input-field min-h-[72px] mt-1"
+                placeholder="Optional short caption or math (e.g. $x^2$)"
+              />
+            </LatexHoverPreview>
           </div>
           {qType === "mcq" ? (
             <div>
@@ -408,19 +469,21 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
             <>
               <div>
                 <label className="text-sm text-gray-600">Model answer (typed)</label>
-                <textarea
-                  value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
-                  className="input-field min-h-[100px] mt-1"
-                  placeholder="Ideal solution for grading reference"
-                />
+                <LatexHoverPreview value={answer}>
+                  <textarea
+                    value={answer}
+                    onChange={(e) => setAnswer(e.target.value)}
+                    className="input-field min-h-[100px] mt-1"
+                    placeholder="Ideal solution for grading reference (LaTeX: $...$)"
+                  />
+                </LatexHoverPreview>
               </div>
               <RubricTableEditor rows={rubricRows} onChange={setRubricRows} />
             </>
           )}
           <button
             type="button"
-            disabled={busy || !pdf}
+            disabled={busy || (!pdf && imagePages.length === 0)}
             onClick={() => void addToQueue()}
             className="btn-primary"
           >
@@ -454,7 +517,7 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
       {msg && (
         <p
           className={`text-sm rounded-lg p-3 ${
-            msg.includes("Submitted") || msg.includes("added")
+            msg.includes("Saved") || msg.includes("added") || msg.includes("Submitted")
               ? "bg-green-50 text-green-800"
               : "bg-amber-50 text-amber-900"
           }`}

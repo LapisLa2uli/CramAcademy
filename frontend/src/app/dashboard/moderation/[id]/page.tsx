@@ -17,6 +17,7 @@ export default function ModerationEditPage() {
   const [answer, setAnswer] = useState("");
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [type, setType] = useState<QuestionType>("mcq");
+  const [explanation, setExplanation] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -31,6 +32,7 @@ export default function ModerationEditPage() {
       setAnswer(data.answer || "");
       setDifficulty(data.difficulty);
       setType(data.type);
+      setExplanation(data.explanation || "");
     } catch (e) {
       alert(e instanceof Error ? e.message : "Load failed");
       setQ(null);
@@ -54,6 +56,7 @@ export default function ModerationEditPage() {
         answer,
         difficulty,
         type,
+        explanation: explanation.trim() || undefined,
       });
       await load();
       alert("Saved.");
@@ -141,6 +144,19 @@ export default function ModerationEditPage() {
           <label className="block text-sm font-medium text-gray-700 mb-1">Answer</label>
           <input value={answer} onChange={(e) => setAnswer(e.target.value)} className="input-field" />
         </div>
+        {type === "mcq" && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Explanation <span className="text-gray-400">(optional; LaTeX: $...$)</span>
+            </label>
+            <textarea
+              value={explanation}
+              onChange={(e) => setExplanation(e.target.value)}
+              className="input-field min-h-[80px]"
+              placeholder="Why is this the correct answer?"
+            />
+          </div>
+        )}
         <p className="text-xs text-gray-500">
           MCQ options and rubrics are not edited on this screen; use API or Supabase for complex
           changes if needed.

@@ -1,8 +1,61 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import katex from "katex";
 import type { Submission, Question } from "@/types";
 import ProtestForm from "./ProtestForm";
+
+function renderLatexInline(html: string): string {
+  return html.replace(
+    /\$\$([\s\S]*?)\$\$|\$(.*?)\$/g,
+    (match, display, inline) => {
+      const tex = display || inline;
+      try {
+        return katex.renderToString(tex, { displayMode: !!display, throwOnError: false });
+      } catch {
+        return match;
+      }
+    }
+  );
+}
+
+function ExplanationBlock({
+  text,
+  imageUrl,
+  latex,
+}: {
+  text?: string | null;
+  imageUrl?: string | null;
+  latex?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (ref.current && text && latex) {
+      ref.current.innerHTML = renderLatexInline(text);
+    }
+  }, [text, latex]);
+
+  return (
+    <div className="bg-emerald-50 rounded-lg p-4">
+      <p className="text-xs font-medium text-emerald-700 uppercase mb-1">Explanation</p>
+      {text && (
+        latex ? (
+          <div ref={ref} className="text-gray-700 text-sm" />
+        ) : (
+          <p className="text-gray-700 text-sm whitespace-pre-wrap">{text}</p>
+        )
+      )}
+      {imageUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={imageUrl}
+          alt="Explanation"
+          className="mt-2 max-h-48 rounded border border-gray-200 object-contain"
+        />
+      )}
+    </div>
+  );
+}
 
 function QuestionStem({ question }: { question: Question }) {
   return (
@@ -93,6 +146,15 @@ export default function SubmissionView({ submission, question }: SubmissionViewP
           <p className="text-gray-700 text-sm">{submission.justification}</p>
         </div>
       )}
+
+      {question.type === "mcq" &&
+        (question.explanation || question.explanation_image_url) && (
+          <ExplanationBlock
+            text={question.explanation}
+            imageUrl={question.explanation_image_url}
+            latex={question.latex_enabled}
+          />
+        )}
 
       {question.type === "frq" && submission.graded_at && (
         <div className="flex justify-end">

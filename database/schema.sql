@@ -72,6 +72,8 @@ CREATE TABLE public.questions (
     question_image_url TEXT,      -- optional stem image (public Storage URL)
     options JSONB,                -- MCQ: [{"label":"A","text":"...","image_url":"..."},...]
     answer TEXT NOT NULL,         -- correct answer or model solution
+    explanation TEXT,             -- MCQ explanation text (LaTeX supported)
+    explanation_image_url TEXT,   -- optional explanation image URL
     rubric JSONB,                 -- grading rubric for FRQs
     tags TEXT[] DEFAULT '{}',
     creator_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,

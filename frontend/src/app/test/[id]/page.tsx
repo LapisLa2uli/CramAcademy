@@ -186,13 +186,16 @@ export default function TestPage() {
 
             {/* Navigation Buttons */}
             <div className="flex items-center justify-between mt-10 pt-6 border-t border-gray-200">
-              <button
-                onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))}
-                disabled={currentIndex === 0}
-                className="btn-secondary"
-              >
-                Previous
-              </button>
+              {currentIndex > 0 ? (
+                <button
+                  onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))}
+                  className="btn-secondary"
+                >
+                  Previous
+                </button>
+              ) : (
+                <span />
+              )}
 
               <button
                 onClick={toggleFlag}
@@ -205,15 +208,24 @@ export default function TestPage() {
                 {flagged.has(currentIndex) ? "Unflag" : "Flag for Review"}
               </button>
 
-              <button
-                onClick={() =>
-                  setCurrentIndex((i) => Math.min(test.questions.length - 1, i + 1))
-                }
-                disabled={currentIndex === test.questions.length - 1}
-                className="btn-primary"
-              >
-                Next
-              </button>
+              {currentIndex < test.questions.length - 1 ? (
+                <button
+                  onClick={() =>
+                    setCurrentIndex((i) => Math.min(test.questions.length - 1, i + 1))
+                  }
+                  className="btn-primary"
+                >
+                  Next
+                </button>
+              ) : (
+                <button
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                  className="btn-primary bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500"
+                >
+                  {submitting ? "Submitting…" : "Submit Test"}
+                </button>
+              )}
             </div>
           </div>
         </div>

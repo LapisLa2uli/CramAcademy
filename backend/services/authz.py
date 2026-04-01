@@ -16,7 +16,14 @@ def role_rank(role: str | None) -> int:
 
 
 def _user_id_from_jwt_local(token: str) -> str | None:
-    """Return user id if JWT_SECRET is configured and token is valid; else None (use network)."""
+    """Return user id if JWT_SECRET verifies the token locally.
+
+    If local verification fails for any reason except expiry (wrong secret, audience mismatch,
+    etc.), return None so :func:`get_bearer_user_id` can fall back to Supabase ``get_user``,
+    which validates the JWT against the same project as ``SUPABASE_URL`` / ``SUPABASE_ANON_KEY``.
+    Relying only on local decode when ``SUPABASE_JWT_SECRET`` is slightly wrong produced
+    endless 'Invalid token' even though signup and profiles worked.
+    """
     secret = get_settings().supabase_jwt_secret.strip()
     if not secret:
         return None
@@ -30,10 +37,10 @@ def _user_id_from_jwt_local(token: str) -> str | None:
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired") from None
     except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="Invalid token") from None
+        return None
     sub = payload.get("sub")
     if not sub:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return None
     return str(sub)
 
 

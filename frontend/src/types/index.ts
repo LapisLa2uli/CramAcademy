@@ -24,6 +24,8 @@ export interface Question {
   question_image_url?: string | null;
   options?: MCQOption[];
   answer?: string;
+  explanation?: string | null;
+  explanation_image_url?: string | null;
   rubric?: Record<string, unknown>;
   tags: string[];
   creator_id?: string;

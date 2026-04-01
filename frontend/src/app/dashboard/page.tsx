@@ -13,6 +13,7 @@ import RubricTableEditor, {
   defaultRubricRows,
   buildRubricFromRows,
 } from "@/components/RubricTableEditor";
+import LatexHoverPreview from "@/components/LatexHoverPreview";
 
 const PdfQuestionFromPdfPanel = dynamic(
   () => import("@/components/pdf/PdfQuestionFromPdfPanel"),
@@ -145,7 +146,7 @@ export default function DashboardPage() {
                     : "text-gray-600 hover:text-gray-900"
                 }`}
               >
-                From PDF
+                From PDF / Images
               </button>
             </div>
             {contributeMode === "standard" ? (
@@ -197,6 +198,9 @@ function QuestionSubmitForm() {
   const [stemFile, setStemFile] = useState<File | null>(null);
   const [stemPreview, setStemPreview] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
+  const [explanation, setExplanation] = useState("");
+  const [explanationFile, setExplanationFile] = useState<File | null>(null);
+  const [explanationPreview, setExplanationPreview] = useState<string | null>(null);
   const [tags, setTags] = useState("");
   const [options, setOptions] = useState<OptionRow[]>(freshOptions);
   const [rubricRows, setRubricRows] = useState(() => defaultRubricRows());
@@ -282,6 +286,11 @@ function QuestionSubmitForm() {
         question_image_url = await uploadQuestionImage(user.id, stemFile);
       }
 
+      let explanation_image_url: string | undefined;
+      if (explanationFile) {
+        explanation_image_url = await uploadQuestionImage(user.id, explanationFile);
+      }
+
       let mcqPayload: { label: string; text: string; image_url?: string }[] | undefined;
       if (type === "mcq") {
         mcqPayload = await Promise.all(
@@ -308,21 +317,27 @@ function QuestionSubmitForm() {
         content: content.trim(),
         ...(question_image_url ? { question_image_url } : {}),
         answer,
+        ...(explanation.trim() ? { explanation: explanation.trim() } : {}),
+        ...(explanation_image_url ? { explanation_image_url } : {}),
         tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-        latex_enabled: content.includes("$"),
+        latex_enabled: content.includes("$") || explanation.includes("$"),
         options: mcqPayload,
         rubric: rubricObj,
       });
       setSuccess(true);
       setContent("");
       setAnswer("");
+      setExplanation("");
       if (stemPreview) URL.revokeObjectURL(stemPreview);
+      if (explanationPreview) URL.revokeObjectURL(explanationPreview);
       options.forEach((o) => {
         if (o.preview) URL.revokeObjectURL(o.preview);
       });
       previewUrlsRef.current = [];
       setStemFile(null);
       setStemPreview(null);
+      setExplanationFile(null);
+      setExplanationPreview(null);
       setOptions(freshOptions());
       setRubricRows(defaultRubricRows());
     } catch (err) {
@@ -416,12 +431,14 @@ function QuestionSubmitForm() {
           Question text{" "}
           <span className="text-gray-400">(optional if you add an image; LaTeX: $...$)</span>
         </label>
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          className="input-field min-h-[120px]"
-          placeholder="Enter the question text..."
-        />
+        <LatexHoverPreview value={content}>
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            className="input-field min-h-[120px]"
+            placeholder="Enter the question text..."
+          />
+        </LatexHoverPreview>
       </div>
 
       <div>
@@ -454,16 +471,18 @@ function QuestionSubmitForm() {
             >
               <div className="flex items-center gap-2">
                 <span className="font-medium text-gray-500 w-6">{opt.label}.</span>
-                <input
-                  value={opt.text}
-                  onChange={(e) => {
-                    const next = [...options];
-                    next[i] = { ...opt, text: e.target.value };
-                    setOptions(next);
-                  }}
-                  className="input-field flex-1"
-                  placeholder={`Option ${opt.label} text`}
-                />
+                <LatexHoverPreview value={opt.text}>
+                  <input
+                    value={opt.text}
+                    onChange={(e) => {
+                      const next = [...options];
+                      next[i] = { ...opt, text: e.target.value };
+                      setOptions(next);
+                    }}
+                    className="input-field flex-1"
+                    placeholder={`Option ${opt.label} text (LaTeX: $...$)`}
+                  />
+                </LatexHoverPreview>
               </div>
               <div className="ml-8">
                 <input
@@ -494,14 +513,65 @@ function QuestionSubmitForm() {
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Correct Answer {type === "mcq" && "(letter)"}
         </label>
-        <input
-          value={answer}
-          onChange={(e) => setAnswer(e.target.value)}
-          required
-          className="input-field"
-          placeholder={type === "mcq" ? "A" : "Model answer or solution"}
-        />
+        <LatexHoverPreview value={answer}>
+          <input
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value)}
+            required
+            className="input-field"
+            placeholder={type === "mcq" ? "A" : "Model answer or solution"}
+          />
+        </LatexHoverPreview>
       </div>
+
+      {type === "mcq" && (
+        <div className="space-y-3 border-t border-gray-200 pt-4">
+          <h3 className="text-sm font-medium text-gray-700">
+            Explanation <span className="text-gray-400">(optional; shown after grading)</span>
+          </h3>
+          <LatexHoverPreview value={explanation}>
+            <textarea
+              value={explanation}
+              onChange={(e) => setExplanation(e.target.value)}
+              className="input-field min-h-[80px]"
+              placeholder="Why is this the correct answer? (LaTeX: $...$)"
+            />
+          </LatexHoverPreview>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">
+              Explanation image <span className="text-gray-400">(optional)</span>
+            </label>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="text-xs text-gray-600"
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                if (explanationPreview) {
+                  URL.revokeObjectURL(explanationPreview);
+                  previewUrlsRef.current = previewUrlsRef.current.filter((u) => u !== explanationPreview);
+                }
+                setExplanationFile(f);
+                if (f) {
+                  const url = URL.createObjectURL(f);
+                  previewUrlsRef.current.push(url);
+                  setExplanationPreview(url);
+                } else {
+                  setExplanationPreview(null);
+                }
+              }}
+            />
+            {explanationPreview && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={explanationPreview}
+                alt="Explanation preview"
+                className="mt-2 max-h-32 rounded border border-gray-200 object-contain"
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">

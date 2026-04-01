@@ -79,6 +79,14 @@ export default function ModerationCommunityBankPage() {
                   <span>{q.type}</span>
                   <span>{q.difficulty}</span>
                   <span className="text-emerald-600">published</span>
+                  {q.type === "mcq" && !q.explanation && !q.explanation_image_url && (
+                    <span
+                      title="Missing explanation"
+                      className="text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 cursor-help"
+                    >
+                      ⚠ missing explanation
+                    </span>
+                  )}
                 </div>
                 <p className="text-gray-800 line-clamp-3">{q.content || "(image stem)"}</p>
               </div>

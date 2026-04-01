@@ -175,7 +175,7 @@ export const api = {
     approve(id: string) {
       return apiFetch<Question>(`/questions/${id}/approve`, { method: "POST" });
     },
-    reject(id: string, body: { reason: string }) {
+    reject(id: string, body: { reason: string; explanation?: string }) {
       return apiFetch<Question>(`/questions/${id}/reject`, {
         method: "POST",
         body: JSON.stringify(body),

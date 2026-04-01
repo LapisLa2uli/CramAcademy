@@ -16,6 +16,7 @@ export default function ModerationQueuePage() {
   const [reasons, setReasons] = useState<ReasonOpt[]>([]);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState<string>("");
+  const [rejectExplanation, setRejectExplanation] = useState<string>("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,11 +54,19 @@ export default function ModerationQueuePage() {
 
   const confirmReject = async () => {
     if (!rejectId || !rejectReason) return;
+    if (rejectReason === "other" && !rejectExplanation.trim()) {
+      alert("Please provide a detailed explanation for 'Other'.");
+      return;
+    }
     setBusy(rejectId);
     try {
-      await api.questions.reject(rejectId, { reason: rejectReason });
+      await api.questions.reject(rejectId, {
+        reason: rejectReason,
+        ...(rejectReason === "other" ? { explanation: rejectExplanation.trim() } : {}),
+      });
       setRejectId(null);
       setRejectReason("");
+      setRejectExplanation("");
       await load();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Reject failed");
@@ -102,7 +111,10 @@ export default function ModerationQueuePage() {
             </p>
             <select
               value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
+              onChange={(e) => {
+                setRejectReason(e.target.value);
+                if (e.target.value !== "other") setRejectExplanation("");
+              }}
               className="input-field w-full"
             >
               <option value="">Select a reason…</option>
@@ -112,6 +124,20 @@ export default function ModerationQueuePage() {
                 </option>
               ))}
             </select>
+            {rejectReason === "other" && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Explain in detail <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={rejectExplanation}
+                  onChange={(e) => setRejectExplanation(e.target.value)}
+                  className="input-field w-full min-h-[80px]"
+                  placeholder="Why is this question being rejected?"
+                  maxLength={2000}
+                />
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
@@ -119,6 +145,7 @@ export default function ModerationQueuePage() {
                 onClick={() => {
                   setRejectId(null);
                   setRejectReason("");
+                  setRejectExplanation("");
                 }}
               >
                 Cancel
@@ -152,6 +179,14 @@ export default function ModerationQueuePage() {
                   <span>{q.subject}</span>
                   <span>{q.type}</span>
                   <span>{q.difficulty}</span>
+                  {q.type === "mcq" && !q.explanation && !q.explanation_image_url && (
+                    <span
+                      title="Missing explanation"
+                      className="text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 cursor-help"
+                    >
+                      ⚠ missing explanation
+                    </span>
+                  )}
                 </div>
                 <p className="text-gray-800 line-clamp-4">{q.content || "(image stem)"}</p>
               </div>

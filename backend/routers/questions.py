@@ -69,7 +69,6 @@ async def list_my_bank(
         client.table("questions")
         .select("*")
         .eq("creator_id", user_id)
-        .in_("pool", ["personal", "community_pending"])
         .order("created_at", desc=True)
         .execute()
     )
@@ -275,6 +274,11 @@ async def reject_question(
             status_code=422,
             detail="Invalid rejection reason. Use GET /questions/rejection-reasons.",
         )
+    if body.reason == "other" and not (body.explanation or "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Please provide a detailed explanation when choosing 'Other'.",
+        )
     client = get_supabase_admin()
     row = _fetch_question_row(client, question_id)
     if row.get("pool") != "community_pending":
@@ -284,6 +288,8 @@ async def reject_question(
         )
 
     label = _REJECT_LABELS[body.reason]
+    if body.reason == "other" and body.explanation:
+        label = f"{label}: {body.explanation.strip()}"
     client.table("questions").update(
         {"pool": "personal", "validated": False, "rejection_reason": label}
     ).eq("id", question_id).execute()

@@ -42,6 +42,8 @@ class QuestionCreate(BaseModel):
     question_image_url: Optional[str] = None
     options: Optional[list[MCQOption]] = None
     answer: str
+    explanation: Optional[str] = None
+    explanation_image_url: Optional[str] = None
     rubric: Optional[dict] = None
     tags: list[str] = Field(default_factory=list)
 
@@ -66,6 +68,8 @@ class QuestionResponse(BaseModel):
     question_image_url: Optional[str] = None
     options: Optional[list[dict]] = None
     answer: Optional[str] = None
+    explanation: Optional[str] = None
+    explanation_image_url: Optional[str] = None
     rubric: Optional[dict] = None
     tags: list[str]
     creator_id: Optional[str] = None
@@ -77,6 +81,7 @@ class QuestionResponse(BaseModel):
 
 class QuestionRejectBody(BaseModel):
     reason: str
+    explanation: Optional[str] = Field(None, max_length=2000)
 
 
 class QuestionUpdate(BaseModel):
@@ -90,6 +95,8 @@ class QuestionUpdate(BaseModel):
     question_image_url: Optional[str] = None
     options: Optional[list[dict]] = None
     answer: Optional[str] = None
+    explanation: Optional[str] = None
+    explanation_image_url: Optional[str] = None
     rubric: Optional[dict] = None
     tags: Optional[list[str]] = None
 
