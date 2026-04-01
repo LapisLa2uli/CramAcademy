@@ -190,7 +190,11 @@ The app will be available at `http://localhost:3000`.
 
 1. Create a new **Web Service** on [render.com](https://render.com)
 2. Set root directory to `backend`
-3. **Python version:** `backend/runtime.txt` pins **Python 3.12** so `pip` installs **binary wheels** for `pydantic-core`. If Render uses a very new Python (e.g. 3.14) by default, wheels may be missing and the build tries to compile Rust (`maturin`), which fails with **read-only file system** on Cargo. If you still see that error, set **Environment → Language** / native runtime to **3.12** explicitly in the dashboard.
+3. **Python version (important):** Render does **not** use `runtime.txt` (that is a Heroku convention). Use one of these ([Render: Python version](https://render.com/docs/python-version)):
+   - **Recommended:** In the dashboard → **Environment** → **Environment Variables**, add **`PYTHON_VERSION`** = **`3.12.8`** (must be a full `x.y.z` version). This has the highest precedence and fixes **`pydantic-core`** trying to build from source on Python 3.14 (Rust/maturin + read-only Cargo error).
+   - **Also:** `backend/.python-version` exists with `3.12.8` (single line, no `python-` prefix). With **Root Directory** = `backend`, this file must live **inside** `backend/` so the build can see it.
+   - Optional: repo root `render.yaml` includes `PYTHON_VERSION` if you use a [Blueprint](https://render.com/docs/infrastructure-as-code).
+
 4. Build command: `pip install -r requirements.txt`
 5. Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 6. Add environment variables from `.env.example`

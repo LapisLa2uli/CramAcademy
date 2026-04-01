@@ -1,0 +1,16 @@
+# Optional: connect this repo as a Render Blueprint, or copy env vars below into the dashboard.
+# Docs: https://render.com/docs/python-version (use PYTHON_VERSION or backend/.python-version)
+
+services:
+  - type: web
+    name: cramacademy-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      # Required when using env var method: full x.y.z (see Render Python docs)
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      # Add the rest from backend/.env.example in the Render dashboard (secrets):
+      # SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET, CORS_ORIGINS, etc.
