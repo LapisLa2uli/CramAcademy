@@ -190,9 +190,10 @@ The app will be available at `http://localhost:3000`.
 
 1. Create a new **Web Service** on [render.com](https://render.com)
 2. Set root directory to `backend`
-3. Build command: `pip install -r requirements.txt`
-4. Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-5. Add environment variables from `.env.example`
+3. **Python version:** `backend/runtime.txt` pins **Python 3.12** so `pip` installs **binary wheels** for `pydantic-core`. If Render uses a very new Python (e.g. 3.14) by default, wheels may be missing and the build tries to compile Rust (`maturin`), which fails with **read-only file system** on Cargo. If you still see that error, set **Environment → Language** / native runtime to **3.12** explicitly in the dashboard.
+4. Build command: `pip install -r requirements.txt`
+5. Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+6. Add environment variables from `.env.example`
 
 ### Database → Supabase
 
