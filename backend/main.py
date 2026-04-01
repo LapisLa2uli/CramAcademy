@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from config import get_settings
-from routers import admin, auth, profile, questions, tests, submissions, protests
+from routers import admin, auth, health, profile, questions, tests, submissions, protests
 
 app = FastAPI(
     title="CramAcademy API",
@@ -20,6 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(health.router)
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(profile.router, prefix="/profile", tags=["Profile"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
@@ -35,6 +36,3 @@ async def root():
     return RedirectResponse(url="/docs")
 
 
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
