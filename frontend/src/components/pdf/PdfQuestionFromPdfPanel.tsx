@@ -27,6 +27,8 @@ type QueuedQuestion = {
   question_image_url: string;
   options?: { label: string; text: string; image_url?: string }[];
   answer: string;
+  explanation?: string;
+  explanation_image_url?: string;
   rubric?: Record<string, unknown>;
   content: string;
 };
@@ -56,6 +58,9 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
 
   const [contentNote, setContentNote] = useState("");
   const [answer, setAnswer] = useState("");
+  const [explanation, setExplanation] = useState("");
+  const [explanationFile, setExplanationFile] = useState<File | null>(null);
+  const [explanationPreview, setExplanationPreview] = useState<string | null>(null);
   const [rubricRows, setRubricRows] = useState<RubricRow[]>(() => defaultRubricRows());
 
   const [queue, setQueue] = useState<QueuedQuestion[]>([]);
@@ -133,6 +138,10 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
     setRects({});
     setAnswer("");
     setContentNote("");
+    setExplanation("");
+    if (explanationPreview) URL.revokeObjectURL(explanationPreview);
+    setExplanationFile(null);
+    setExplanationPreview(null);
     setRubricRows(defaultRubricRows());
     setDrawMode(null);
   };
@@ -204,6 +213,11 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
       const rubric =
         qType === "frq" ? buildRubricFromRows(rubricRows) ?? undefined : undefined;
 
+      let explanation_image_url: string | undefined;
+      if (qType === "mcq" && explanationFile) {
+        explanation_image_url = await uploadQuestionImage(userId, explanationFile);
+      }
+
       const item: QueuedQuestion = {
         type: qType,
         question_image_url,
@@ -211,6 +225,12 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
         answer: qType === "mcq" ? answer.trim().toUpperCase().slice(0, 1) : answer.trim(),
         rubric,
         content: contentNote.trim(),
+        ...(qType === "mcq" && explanation.trim()
+          ? { explanation: explanation.trim() }
+          : {}),
+        ...(qType === "mcq" && explanation_image_url
+          ? { explanation_image_url }
+          : {}),
       };
 
       setQueue((q) => [...q, item]);
@@ -241,8 +261,14 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
           ...(gradeLevel !== "" ? { grade_level: Number(gradeLevel) } : {}),
           content: item.content || (pdf ? "(From PDF)" : "(From image)"),
           question_image_url: item.question_image_url,
-          latex_enabled: item.content.includes("$"),
+          latex_enabled:
+            item.content.includes("$") ||
+            !!(item.explanation && item.explanation.includes("$")),
           answer: item.answer,
+          ...(item.explanation ? { explanation: item.explanation } : {}),
+          ...(item.explanation_image_url
+            ? { explanation_image_url: item.explanation_image_url }
+            : {}),
           tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
           options: item.options,
           rubric: item.rubric,
@@ -455,16 +481,62 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
             </LatexHoverPreview>
           </div>
           {qType === "mcq" ? (
-            <div>
-              <label className="text-sm text-gray-600">Correct answer (letter)</label>
-              <input
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value.toUpperCase())}
-                maxLength={1}
-                className="input-field mt-1 w-24"
-                placeholder="A"
-              />
-            </div>
+            <>
+              <div>
+                <label className="text-sm text-gray-600">Correct answer (letter)</label>
+                <input
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value.toUpperCase())}
+                  maxLength={1}
+                  className="input-field mt-1 w-24"
+                  placeholder="A"
+                />
+              </div>
+              <div className="space-y-3 border-t border-gray-200 pt-4">
+                <h4 className="text-sm font-medium text-gray-800">
+                  Explanation{" "}
+                  <span className="text-gray-400 font-normal">(optional; shown after grading)</span>
+                </h4>
+                <LatexHoverPreview value={explanation}>
+                  <textarea
+                    value={explanation}
+                    onChange={(e) => setExplanation(e.target.value)}
+                    className="input-field min-h-[80px]"
+                    placeholder="Why is this the correct answer? (LaTeX: $...$)"
+                  />
+                </LatexHoverPreview>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    Explanation image <span className="text-gray-400">(optional)</span>
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="text-xs text-gray-600"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] ?? null;
+                      if (explanationPreview) {
+                        URL.revokeObjectURL(explanationPreview);
+                      }
+                      setExplanationFile(f);
+                      if (f) {
+                        setExplanationPreview(URL.createObjectURL(f));
+                      } else {
+                        setExplanationPreview(null);
+                      }
+                    }}
+                  />
+                  {explanationPreview && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={explanationPreview}
+                      alt="Explanation preview"
+                      className="mt-2 max-h-32 rounded border border-gray-200 object-contain"
+                    />
+                  )}
+                </div>
+              </div>
+            </>
           ) : (
             <>
               <div>
