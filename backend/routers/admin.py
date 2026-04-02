@@ -3,6 +3,11 @@ from fastapi import APIRouter, HTTPException, Header
 from database import get_supabase_admin
 from services.authz import get_bearer_user_id, fetch_profile, require_min_role
 from schemas.profile import AdminUserRow, AdminUpdateUserBody
+from services.username import (
+    assert_username_available,
+    normalize_username,
+    validate_username_format,
+)
 
 router = APIRouter()
 
@@ -47,7 +52,6 @@ async def admin_list_users(authorization: str = Header(...)):
                 "id": uid,
                 "email": u.email or p.get("email"),
                 "username": p.get("username"),
-                "display_name": p.get("display_name"),
                 "role": p.get("role", "user"),
                 "created_at": created,
             }
@@ -76,8 +80,15 @@ async def admin_update_user(
     _ensure_profile_exists(client, user_id)
 
     upd: dict = {}
-    if body.display_name is not None:
-        upd["display_name"] = body.display_name
+    if body.username is not None:
+        u = normalize_username(body.username)
+        if not u:
+            raise HTTPException(status_code=400, detail="Username cannot be empty")
+        validate_username_format(u)
+        merged_row = client.table("profiles").select("username").eq("id", user_id).execute().data[0]
+        if u != normalize_username(merged_row.get("username") or ""):
+            assert_username_available(u, user_id)
+            upd["username"] = u
     if body.role is not None:
         if body.role not in ("user", "moderator", "admin"):
             raise HTTPException(status_code=400, detail="Invalid role")
@@ -98,7 +109,6 @@ async def admin_update_user(
         "id": merged["id"],
         "email": email,
         "username": merged.get("username"),
-        "display_name": merged.get("display_name"),
         "role": merged.get("role", "user"),
         "created_at": merged.get("created_at"),
     }

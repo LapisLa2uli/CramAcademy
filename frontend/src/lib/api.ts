@@ -101,7 +101,7 @@ export const api = {
       return apiFetch<ProfileMe>("/profile/me");
     },
     patch(body: {
-      display_name?: string | null;
+      username?: string | null;
       bio?: string | null;
       avatar_url?: string | null;
       equipped_theme?: string | null;
@@ -189,7 +189,7 @@ export const api = {
     },
     updateUser(
       id: string,
-      body: { display_name?: string | null; role?: string }
+      body: { username?: string | null; role?: string }
     ) {
       return apiFetch<AdminUserRow>(`/admin/users/${id}`, {
         method: "PATCH",

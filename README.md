@@ -40,7 +40,7 @@ CramAcademy/
 - **Roles** — `user` (default), `moderator` (validate/edit/delete questions), `admin` (same + manage accounts)
 - **Personal question bank** — new contributions stay private until you submit them for review. After a moderator **publishes** a question to the community pool, it **remains listed** in your bank as “Published” (it is no longer only “personal,” but you still see it alongside personal and pending items).
 - **Moderation** — review queue; **community bank** subpage to browse or remove published questions; **reject** with a fixed list of reasons. Choosing **Other** requires a **free-text explanation** (stored with the rejection reason for the author).
-- **Profiles & gamification** — account page with avatar, username, display name, bio, contribution heatmap, points, titles, and cosmetic themes/frames (see app). Header shows username and avatar.
+- **Profiles & gamification** — account page with avatar, editable **username** (shown in the header and profile), bio, contribution heatmap, points, titles, and cosmetic themes/frames (see app).
 - **User-Generated Questions** — submit questions and earn contribution points when moderators approve community submissions
 - **MCQ + FRQ** — supports both multiple choice and free response
 
@@ -66,6 +66,7 @@ CramAcademy/
    - **`database/migration_profile_contributions.sql`** — profiles (bio, points, cosmetics), contribution grants, `rejection_reason` on questions (if not already in schema)
    - **`database/migration_explanations.sql`** — MCQ **`explanation`** and **`explanation_image_url`** columns on `questions`
    - **`database/migration_username_avatar.sql`** — `username` (unique) and `avatar_url` on `profiles` (if not already in `schema.sql`)
+   - **`database/migration_drop_display_name.sql`** — drops legacy **`display_name`** if you still have it (the app uses **username** only)
    If question submit fails with **PGRST204** / missing **`question_image_url`**, run **`database/patch_questions_app_columns.sql`** (idempotent). For existing DBs, apply only migrations you have not run yet; **`database/schema.sql`** is the full reference for a fresh Supabase project.
 3. Copy your project URL, anon key, and service role key
 4. After you create the first account (signup in the app), make an admin with: `UPDATE public.profiles SET role = 'admin' WHERE email = 'your@email.com';` Later admins can use the **Admin** page in the dashboard.
@@ -148,7 +149,7 @@ The app will be available at `http://localhost:3000`.
 | POST   | `/auth/login`                     | Sign in                    |
 | GET    | `/auth/me`                        | Current profile + role     |
 | GET    | `/profile/me`                     | Full profile + title/level/points (auth) |
-| PATCH  | `/profile/me`                     | Update display name, bio, avatar, cosmetics |
+| PATCH  | `/profile/me`                     | Update username, bio, avatar, cosmetics |
 | GET    | `/profile/me/contributions`       | Contribution calendar (heatmap data) |
 | GET    | `/admin/users`                    | List users (admin)         |
 | PATCH  | `/admin/users/{id}`               | Update profile role/name (admin) |

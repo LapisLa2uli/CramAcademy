@@ -81,7 +81,6 @@ export default function AdminPage() {
               <tr className="border-b border-gray-200 text-left text-gray-500">
                 <th className="p-3 font-medium">Email</th>
                 <th className="p-3 font-medium">Username</th>
-                <th className="p-3 font-medium">Display name</th>
                 <th className="p-3 font-medium">Role</th>
                 <th className="p-3 font-medium">Actions</th>
               </tr>
@@ -91,7 +90,6 @@ export default function AdminPage() {
                 <tr key={u.id} className="border-b border-gray-100">
                   <td className="p-3 text-gray-800">{u.email || "—"}</td>
                   <td className="p-3 text-gray-600 font-mono text-xs">{u.username || "—"}</td>
-                  <td className="p-3 text-gray-600">{u.display_name || "—"}</td>
                   <td className="p-3">
                     <select
                       value={(u.role as UserRole) || "user"}

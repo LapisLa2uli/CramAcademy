@@ -36,7 +36,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingLook, setSavingLook] = useState(false);
-  const [displayName, setDisplayName] = useState("");
+  const [usernameEdit, setUsernameEdit] = useState("");
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [theme, setTheme] = useState("default");
@@ -48,7 +48,7 @@ export default function ProfilePage() {
       const [p, c] = await Promise.all([api.profile.me(), api.profile.contributions()]);
       setMe(p);
       setCal(c);
-      setDisplayName(p.display_name ?? "");
+      setUsernameEdit(p.username ?? "");
       setBio(p.bio ?? "");
       setAvatarUrl(p.avatar_url ?? "");
       const tOpts = themeOptions(p.unlocked_themes);
@@ -73,11 +73,12 @@ export default function ProfilePage() {
     setSavingProfile(true);
     try {
       const p = await api.profile.patch({
-        display_name: displayName.trim() || null,
+        username: usernameEdit.trim(),
         bio: bio.trim() || null,
         avatar_url: avatarUrl.trim() || null,
       });
       setMe(p);
+      setUsernameEdit(p.username ?? "");
       setAvatarUrl(p.avatar_url ?? "");
       await refreshProfile();
     } catch (err) {
@@ -125,8 +126,8 @@ export default function ProfilePage() {
     <div>
       <h1 className="text-3xl font-bold text-gray-900 mb-2">Profile</h1>
       <p className="text-gray-600 mb-8 max-w-2xl">
-        Update how you appear on the site, track contribution points from approved community
-        questions, and unlock profile themes and frames as you level up.
+        Your username is shown in the header and on this page. Track contribution points from
+        approved community questions, and unlock profile themes and frames as you level up.
       </p>
 
       <div className={`card p-8 mb-8 ${shellClass}`}>
@@ -140,8 +141,8 @@ export default function ProfilePage() {
             className="h-20 w-20 rounded-full object-cover shrink-0 bg-gray-300 ring-2 ring-gray-200"
           />
           <div className="min-w-0">
-            <p className="text-sm text-gray-500">Username</p>
-            <p className="text-lg font-semibold text-gray-900 truncate">
+            <p className="text-sm text-gray-500">You are</p>
+            <p className="text-lg font-semibold text-gray-900 truncate font-mono">
               {me.username ?? "—"}
             </p>
             <p className="text-sm text-gray-500 truncate">{me.email}</p>
@@ -176,18 +177,20 @@ export default function ProfilePage() {
       </div>
 
       <form onSubmit={saveProfileOnly} className="card p-8 space-y-6 max-w-2xl mb-6">
-        <h2 className="text-lg font-semibold text-gray-900">Name, bio &amp; photo</h2>
+        <h2 className="text-lg font-semibold text-gray-900">Username, bio &amp; photo</h2>
         <p className="text-sm text-gray-600">
-          Save this section without touching themes or frames. Use an https link to an image for your
-          profile photo, or leave it blank for the default avatar.
+          Save this section without touching themes or frames. Usernames are stored in lowercase (3–30
+          characters: letters, digits, underscores). Use an https link for your profile photo, or leave
+          it blank for the default avatar.
         </p>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Display name</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
           <input
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            className="input-field"
-            maxLength={120}
+            value={usernameEdit}
+            onChange={(e) => setUsernameEdit(e.target.value)}
+            className="input-field font-mono"
+            maxLength={30}
+            autoComplete="username"
           />
         </div>
         <div>

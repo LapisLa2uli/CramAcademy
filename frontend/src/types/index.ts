@@ -39,9 +39,8 @@ export interface Question {
 export interface Profile {
   id: string;
   email: string;
-  /** Stable handle; set by DB (see migration_username_avatar.sql). */
+  /** Public handle; shown in the header and profile. */
   username?: string;
-  display_name?: string | null;
   bio?: string | null;
   avatar_url?: string | null;
   role: UserRole;
@@ -77,7 +76,6 @@ export interface AdminUserRow {
   id: string;
   email?: string | null;
   username?: string | null;
-  display_name?: string | null;
   role: UserRole;
   created_at?: string | null;
 }

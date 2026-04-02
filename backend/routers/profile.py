@@ -19,6 +19,11 @@ from services.contributions import (
     FRAME_UNLOCKS,
     THEME_UNLOCKS,
 )
+from services.username import (
+    assert_username_available,
+    normalize_username,
+    validate_username_format,
+)
 
 router = APIRouter()
 
@@ -51,8 +56,15 @@ async def update_my_profile(
     uid = get_bearer_user_id(authorization)
     row = fetch_profile(uid)
     upd: dict = {}
-    if body.display_name is not None:
-        upd["display_name"] = body.display_name.strip() or None
+    if body.username is not None:
+        u = normalize_username(body.username)
+        if not u:
+            raise HTTPException(status_code=400, detail="Username cannot be empty")
+        validate_username_format(u)
+        current = normalize_username(row.get("username") or "")
+        if u != current:
+            assert_username_available(u, uid)
+            upd["username"] = u
     if body.bio is not None:
         upd["bio"] = body.bio.strip() or None
     if body.avatar_url is not None:

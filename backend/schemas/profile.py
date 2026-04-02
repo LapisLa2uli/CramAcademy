@@ -5,7 +5,6 @@ class ProfileResponse(BaseModel):
     id: str
     email: str
     username: str
-    display_name: str | None = None
     bio: str | None = None
     avatar_url: str | None = None
     role: str
@@ -26,7 +25,6 @@ def profile_response_from_row(p: dict) -> ProfileResponse:
         id=uid,
         email=p.get("email") or "",
         username=uname,
-        display_name=p.get("display_name"),
         bio=p.get("bio"),
         avatar_url=p.get("avatar_url"),
         role=p.get("role", "user"),
@@ -49,7 +47,7 @@ class ProfileMeResponse(ProfileResponse):
 
 
 class ProfileUpdateBody(BaseModel):
-    display_name: str | None = Field(None, max_length=120)
+    username: str | None = Field(None, max_length=30)
     bio: str | None = Field(None, max_length=2000)
     avatar_url: str | None = Field(None, max_length=2000)
     equipped_theme: str | None = None
@@ -72,11 +70,10 @@ class AdminUserRow(BaseModel):
     id: str
     email: str | None = None
     username: str | None = None
-    display_name: str | None = None
     role: str
     created_at: str | None = None
 
 
 class AdminUpdateUserBody(BaseModel):
-    display_name: str | None = None
+    username: str | None = Field(None, max_length=30)
     role: str | None = None
