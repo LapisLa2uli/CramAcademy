@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase, getSupabaseConfigError } from "@/lib/supabase";
+import { getEmailConfirmationRedirectUrl } from "@/lib/siteUrl";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -37,9 +38,13 @@ export default function SignupPage() {
     }
 
     try {
+      const emailRedirectTo = getEmailConfirmationRedirectUrl();
       const { error: authError } = await supabase.auth.signUp({
         email,
         password,
+        options: emailRedirectTo
+          ? { emailRedirectTo }
+          : undefined,
       });
 
       if (authError) {

@@ -135,7 +135,10 @@ The app will be available at `http://localhost:3000`.
 | ------------------------------- | ------------------------------- |
 | `NEXT_PUBLIC_SUPABASE_URL`      | Supabase project URL            |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous key          |
+| `NEXT_PUBLIC_SITE_URL`          | Optional. **Canonical site URL** (no trailing slash), e.g. `https://cram-academy.vercel.app`. Used for **email confirmation** redirects on signup. If unset, the browser uses `window.location.origin` (fine when users sign up on the same host). Set on Vercel if links must always point at production. |
 | `NEXT_PUBLIC_API_URL`           | Optional. Omit locally to use `/backend-api` proxy to FastAPI. Set for production (full URL, no trailing slash). |
+
+**Supabase email confirmation:** In **Authentication → URL configuration**, set **Site URL** to your production app (e.g. `https://cram-academy.vercel.app`) and add **Redirect URLs** including `https://cram-academy.vercel.app/login` and `http://localhost:3000/login` so `emailRedirectTo` from signup is allowed.
 
 **Supabase project alignment:** `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in the frontend must refer to the **same** Supabase project as `SUPABASE_URL` / keys in the backend. If they differ, sign-in can succeed while API calls return **401 Invalid token**.
 
