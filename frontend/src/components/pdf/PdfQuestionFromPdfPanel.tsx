@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import type { CourseLevel } from "@/types";
 import { api } from "@/lib/api";
 import { uploadQuestionImage } from "@/lib/questionImageUpload";
 import { cropPdfRegionToPng, type NormRect } from "@/lib/pdf/cropPdfPage";
@@ -20,6 +19,7 @@ import RubricTableEditor, {
   buildRubricFromRows,
 } from "../RubricTableEditor";
 import LatexHoverPreview from "../LatexHoverPreview";
+import SubjectPicker from "../SubjectPicker";
 
 const CROP_SCALE = 2.5;
 
@@ -55,9 +55,10 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
   const [pageRects, setPageRects] = useState<PageRects>({});
   const [drawMode, setDrawMode] = useState<RegionMode | null>(null);
 
-  const [subject, setSubject] = useState("Mathematics");
+  const [subjectId, setSubjectId] = useState("");
+  const [subjectName, setSubjectName] = useState("");
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
-  const [courseLevel, setCourseLevel] = useState<CourseLevel | "">("");
+  const [courseLevel, setCourseLevel] = useState("");
   const [gradeLevel, setGradeLevel] = useState<number | "">("");
   const [tags, setTags] = useState("");
 
@@ -289,7 +290,8 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
       for (const item of queue) {
         await api.questions.create({
           type: item.type,
-          subject,
+          subject: subjectName,
+          subject_id: subjectId,
           difficulty,
           ...(courseLevel ? { course_level: courseLevel } : {}),
           ...(gradeLevel !== "" ? { grade_level: Number(gradeLevel) } : {}),
@@ -478,34 +480,22 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
       <div className="grid md:grid-cols-2 gap-6 border-t border-gray-200 pt-6">
         <div className="space-y-3">
           <h3 className="font-medium text-gray-800">Shared metadata (all queued questions)</h3>
-          <input
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            className="input-field"
-            placeholder="Subject"
+          <SubjectPicker
+            subjectId={subjectId}
+            onSubjectChange={(id, name) => { setSubjectId(id); setSubjectName(name); }}
+            level={courseLevel}
+            onLevelChange={setCourseLevel}
+            allowAny={false}
           />
-          <div className="grid grid-cols-2 gap-2">
-            <select
-              value={difficulty}
-              onChange={(e) => setDifficulty(e.target.value as "easy" | "medium" | "hard")}
-              className="input-field"
-            >
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
-            </select>
-            <select
-              value={courseLevel}
-              onChange={(e) => setCourseLevel(e.target.value as CourseLevel | "")}
-              className="input-field"
-            >
-              <option value="">Level —</option>
-              <option value="S">S</option>
-              <option value="S+">S+</option>
-              <option value="H">H</option>
-              <option value="H+">H+</option>
-            </select>
-          </div>
+          <select
+            value={difficulty}
+            onChange={(e) => setDifficulty(e.target.value as "easy" | "medium" | "hard")}
+            className="input-field"
+          >
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
           <select
             value={gradeLevel}
             onChange={(e) =>

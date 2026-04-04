@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import type { AdminUserRow, UserRole } from "@/types";
@@ -67,10 +68,15 @@ export default function AdminPage() {
   return (
     <div>
       <h1 className="text-3xl font-bold text-gray-900 mb-2">User administration</h1>
-      <p className="text-gray-600 mb-8">
+      <p className="text-gray-600 mb-4">
         Change roles (user / moderator / admin) or remove accounts. You cannot delete your own
         account from here.
       </p>
+      <div className="mb-8">
+        <Link href="/dashboard/admin/subjects" className="btn-secondary text-sm inline-flex items-center gap-1">
+          Manage Subjects &amp; Levels →
+        </Link>
+      </div>
 
       {loading ? (
         <p className="text-gray-400">Loading…</p>

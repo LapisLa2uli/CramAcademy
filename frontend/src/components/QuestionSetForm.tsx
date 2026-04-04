@@ -10,7 +10,7 @@ import RubricTableEditor, {
   type RubricRow,
 } from "./RubricTableEditor";
 import LatexHoverPreview from "./LatexHoverPreview";
-import type { CourseLevel } from "@/types";
+import SubjectPicker from "./SubjectPicker";
 
 type OptionRow = {
   label: string;
@@ -70,9 +70,10 @@ export default function QuestionSetForm() {
   const [contextImagePreview, setContextImagePreview] = useState<string | null>(null);
 
   // Shared metadata
-  const [subject, setSubject] = useState("Mathematics");
+  const [subjectId, setSubjectId] = useState("");
+  const [subjectName, setSubjectName] = useState("");
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
-  const [courseLevel, setCourseLevel] = useState<CourseLevel | "">("");
+  const [courseLevel, setCourseLevel] = useState("");
   const [gradeLevel, setGradeLevel] = useState<number | "">("");
   const [tags, setTags] = useState("");
 
@@ -146,6 +147,10 @@ export default function QuestionSetForm() {
     e.preventDefault();
     if (!user?.id) {
       alert("You must be signed in.");
+      return;
+    }
+    if (!subjectName) {
+      alert("Please select a subject.");
       return;
     }
     if (!contextText.trim() && !contextImageFile) {
@@ -236,7 +241,8 @@ export default function QuestionSetForm() {
 
         await api.questionSets.addQuestion(set.id, {
           type: q.type,
-          subject,
+          subject: subjectName,
+          subject_id: subjectId,
           difficulty,
           ...(courseLevel ? { course_level: courseLevel } : {}),
           ...(gradeLevel !== "" ? { grade_level: Number(gradeLevel) } : {}),
@@ -315,70 +321,55 @@ export default function QuestionSetForm() {
       </div>
 
       {/* Shared Metadata */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-          <input
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            className="input-field"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Difficulty</label>
-          <select
-            value={difficulty}
-            onChange={(e) => setDifficulty(e.target.value as "easy" | "medium" | "hard")}
-            className="input-field"
-          >
-            <option value="easy">Easy</option>
-            <option value="medium">Medium</option>
-            <option value="hard">Hard</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Course level <span className="text-gray-400">(opt.)</span>
-          </label>
-          <select
-            value={courseLevel}
-            onChange={(e) => setCourseLevel(e.target.value as CourseLevel | "")}
-            className="input-field"
-          >
-            <option value="">--</option>
-            <option value="S">S (Standard)</option>
-            <option value="S+">S+ (Standard+)</option>
-            <option value="H">H (Honors)</option>
-            <option value="H+">H+ (Honors+)</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Grade <span className="text-gray-400">(opt.)</span>
-          </label>
-          <select
-            value={gradeLevel}
-            onChange={(e) =>
-              setGradeLevel(e.target.value === "" ? "" : Number(e.target.value))
-            }
-            className="input-field"
-          >
-            <option value="">--</option>
-            {[6, 7, 8, 9, 10, 11, 12].map((g) => (
-              <option key={g} value={g}>Grade {g}</option>
-            ))}
-          </select>
-        </div>
-        <div className="sm:col-span-2">
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Tags <span className="text-gray-400">(comma-separated)</span>
-          </label>
-          <input
-            value={tags}
-            onChange={(e) => setTags(e.target.value)}
-            className="input-field"
-            placeholder="algebra, passage-analysis"
-          />
+      <div className="space-y-4">
+        <SubjectPicker
+          subjectId={subjectId}
+          onSubjectChange={(id, name) => { setSubjectId(id); setSubjectName(name); }}
+          level={courseLevel}
+          onLevelChange={setCourseLevel}
+          allowAny={false}
+        />
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Difficulty</label>
+            <select
+              value={difficulty}
+              onChange={(e) => setDifficulty(e.target.value as "easy" | "medium" | "hard")}
+              className="input-field"
+            >
+              <option value="easy">Easy</option>
+              <option value="medium">Medium</option>
+              <option value="hard">Hard</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Grade <span className="text-gray-400">(opt.)</span>
+            </label>
+            <select
+              value={gradeLevel}
+              onChange={(e) =>
+                setGradeLevel(e.target.value === "" ? "" : Number(e.target.value))
+              }
+              className="input-field"
+            >
+              <option value="">--</option>
+              {[6, 7, 8, 9, 10, 11, 12].map((g) => (
+                <option key={g} value={g}>Grade {g}</option>
+              ))}
+            </select>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Tags <span className="text-gray-400">(comma-separated)</span>
+            </label>
+            <input
+              value={tags}
+              onChange={(e) => setTags(e.target.value)}
+              className="input-field"
+              placeholder="algebra, passage-analysis"
+            />
+          </div>
         </div>
       </div>
 

@@ -179,6 +179,14 @@ export default function ModerationQueuePage() {
                   <span>{q.subject}</span>
                   <span>{q.type}</span>
                   <span>{q.difficulty}</span>
+                  {!q.subject_id && (
+                    <span
+                      title="Missing subject — assign via Edit"
+                      className="text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 cursor-help"
+                    >
+                      ⚠ missing subject
+                    </span>
+                  )}
                   {q.type === "mcq" && !q.explanation && !q.explanation_image_url && (
                     <span
                       title="Missing explanation"

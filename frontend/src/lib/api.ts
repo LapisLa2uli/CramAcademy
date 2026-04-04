@@ -4,6 +4,7 @@ import {
   Protest,
   Question,
   QuestionSet,
+  Subject,
   TestConfig,
   UserAnswer,
   Profile,
@@ -180,6 +181,29 @@ export const api = {
       return apiFetch<Question>(`/questions/${id}/reject`, {
         method: "POST",
         body: JSON.stringify(body),
+      });
+    },
+  },
+
+  subjects: {
+    list() {
+      return apiFetch<Subject[]>("/subjects");
+    },
+    create(data: { name: string; levels: string[]; position?: number }) {
+      return apiFetch<Subject>("/subjects", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    update(id: string, data: { name?: string; levels?: string[]; position?: number }) {
+      return apiFetch<Subject>(`/subjects/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+    },
+    delete(id: string) {
+      return apiFetch<{ status: string; id: string }>(`/subjects/${id}`, {
+        method: "DELETE",
       });
     },
   },

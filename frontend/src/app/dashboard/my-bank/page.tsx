@@ -84,6 +84,14 @@ export default function MyBankPage() {
                   </span>
                   <span className="text-xs text-gray-400">{q.subject}</span>
                   <span className="text-xs text-gray-400">{q.type}</span>
+                  {!q.subject_id && (
+                    <span
+                      title="Missing subject — moderator needs to assign one"
+                      className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 cursor-help"
+                    >
+                      ⚠ missing subject
+                    </span>
+                  )}
                   {q.type === "mcq" && !q.explanation && !q.explanation_image_url && (
                     <span
                       title="Missing explanation"

@@ -1,45 +1,35 @@
 "use client";
 
-import { useState } from "react";
-import type { CourseLevel, Difficulty, TestConfig, QuestionSource, QuestionTypeFilter } from "@/types";
+import { useCallback, useState } from "react";
+import type { Difficulty, TestConfig, QuestionSource, QuestionTypeFilter } from "@/types";
+import SubjectPicker from "./SubjectPicker";
 
 interface TestConfigFormProps {
   onSubmit: (config: TestConfig) => void;
   loading: boolean;
 }
 
-const SUBJECTS = [
-  "Mathematics",
-  "Physics",
-  "Chemistry",
-  "Biology",
-  "Computer Science",
-  "English",
-  "History",
-];
-
-const COURSE_LEVELS: { value: CourseLevel | ""; label: string }[] = [
-  { value: "", label: "Any level" },
-  { value: "S", label: "S (Standard)" },
-  { value: "S+", label: "S+ (Standard+)" },
-  { value: "H", label: "H (Honors)" },
-  { value: "H+", label: "H+ (Honors+)" },
-];
-
 export default function TestConfigForm({ onSubmit, loading }: TestConfigFormProps) {
-  const [subject, setSubject] = useState(SUBJECTS[0]);
+  const [subjectId, setSubjectId] = useState("");
+  const [subjectName, setSubjectName] = useState("");
   const [difficulty, setDifficulty] = useState<Difficulty | "">("");
-  const [courseLevel, setCourseLevel] = useState<CourseLevel | "">("");
+  const [courseLevel, setCourseLevel] = useState("");
   const [gradeLevel, setGradeLevel] = useState<number | "">("");
   const [numQuestions, setNumQuestions] = useState(10);
   const [timeMinutes, setTimeMinutes] = useState(60);
   const [questionSource, setQuestionSource] = useState<QuestionSource>("both");
   const [questionType, setQuestionType] = useState<QuestionTypeFilter>("mixed");
 
+  const handleLevelChange = useCallback((v: string) => setCourseLevel(v), []);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!subjectName) {
+      alert("Please select a subject.");
+      return;
+    }
     onSubmit({
-      subject,
+      subject: subjectName,
       difficulty: difficulty || undefined,
       course_level: courseLevel || undefined,
       grade_level: gradeLevel === "" ? undefined : Number(gradeLevel),
@@ -54,37 +44,13 @@ export default function TestConfigForm({ onSubmit, loading }: TestConfigFormProp
     <form onSubmit={handleSubmit} className="card p-8 space-y-6 max-w-lg">
       <h2 className="text-xl font-semibold text-gray-800">Configure Your Test</h2>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-        <select
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-          className="input-field"
-        >
-          {SUBJECTS.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Course level <span className="text-gray-400">(optional)</span>
-        </label>
-        <select
-          value={courseLevel}
-          onChange={(e) => setCourseLevel(e.target.value as CourseLevel | "")}
-          className="input-field"
-        >
-          {COURSE_LEVELS.map(({ value, label }) => (
-            <option key={label} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </div>
+      <SubjectPicker
+        subjectId={subjectId}
+        onSubjectChange={(id, name) => { setSubjectId(id); setSubjectName(name); }}
+        level={courseLevel}
+        onLevelChange={handleLevelChange}
+        allowAny={false}
+      />
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">

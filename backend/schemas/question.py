@@ -33,7 +33,8 @@ class MCQOption(BaseModel):
 
 class QuestionCreate(BaseModel):
     type: QuestionType
-    subject: str
+    subject: str = ""
+    subject_id: Optional[str] = None
     difficulty: DifficultyLevel = DifficultyLevel.medium
     course_level: Optional[CourseLevel] = None
     grade_level: Optional[int] = Field(None, ge=1, le=12)
@@ -61,7 +62,8 @@ class QuestionCreate(BaseModel):
 class QuestionResponse(BaseModel):
     id: str
     type: QuestionType
-    subject: str
+    subject: str = ""
+    subject_id: Optional[str] = None
     difficulty: DifficultyLevel
     course_level: Optional[str] = None
     grade_level: Optional[int] = None
@@ -91,6 +93,7 @@ class QuestionRejectBody(BaseModel):
 class QuestionUpdate(BaseModel):
     type: Optional[QuestionType] = None
     subject: Optional[str] = None
+    subject_id: Optional[str] = None
     difficulty: Optional[DifficultyLevel] = None
     course_level: Optional[CourseLevel] = None
     grade_level: Optional[int] = Field(None, ge=1, le=12)

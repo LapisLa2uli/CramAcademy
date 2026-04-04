@@ -7,8 +7,9 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import TestConfigForm from "@/components/TestConfigForm";
-import type { CourseLevel, TestConfig } from "@/types";
+import type { TestConfig } from "@/types";
 import { uploadQuestionImage } from "@/lib/questionImageUpload";
+import SubjectPicker from "@/components/SubjectPicker";
 import RubricTableEditor, {
   defaultRubricRows,
   buildRubricFromRows,
@@ -204,9 +205,10 @@ function QuestionSubmitForm() {
   };
 
   const [type, setType] = useState<"mcq" | "frq">("mcq");
-  const [subject, setSubject] = useState("Mathematics");
+  const [subjectId, setSubjectId] = useState("");
+  const [subjectName, setSubjectName] = useState("");
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
-  const [courseLevel, setCourseLevel] = useState<CourseLevel | "">("");
+  const [courseLevel, setCourseLevel] = useState("");
   const [gradeLevel, setGradeLevel] = useState<number | "">("");
   const [content, setContent] = useState("");
   const [stemFile, setStemFile] = useState<File | null>(null);
@@ -324,7 +326,8 @@ function QuestionSubmitForm() {
 
       await api.questions.create({
         type,
-        subject,
+        subject: subjectName,
+        ...(subjectId ? { subject_id: subjectId } : {}),
         difficulty,
         ...(courseLevel ? { course_level: courseLevel } : {}),
         ...(gradeLevel !== "" ? { grade_level: Number(gradeLevel) } : {}),
@@ -383,14 +386,12 @@ function QuestionSubmitForm() {
             <option value="frq">Free Response</option>
           </select>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-          <input
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            className="input-field"
-          />
-        </div>
+        <SubjectPicker
+          subjectId={subjectId}
+          onSubjectChange={(id, name) => { setSubjectId(id); setSubjectName(name); }}
+          level={courseLevel}
+          onLevelChange={setCourseLevel}
+        />
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Difficulty</label>
           <select
@@ -401,22 +402,6 @@ function QuestionSubmitForm() {
             <option value="easy">Easy</option>
             <option value="medium">Medium</option>
             <option value="hard">Hard</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Course level <span className="text-gray-400">(optional)</span>
-          </label>
-          <select
-            value={courseLevel}
-            onChange={(e) => setCourseLevel(e.target.value as CourseLevel | "")}
-            className="input-field"
-          >
-            <option value="">—</option>
-            <option value="S">S (Standard)</option>
-            <option value="S+">S+ (Standard+)</option>
-            <option value="H">H (Honors)</option>
-            <option value="H+">H+ (Honors+)</option>
           </select>
         </div>
         <div>

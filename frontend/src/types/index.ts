@@ -6,6 +6,14 @@ export type UserRole = "user" | "moderator" | "admin";
 export type QuestionPool = "personal" | "community_pending" | "community";
 export type QuestionSource = "personal" | "community" | "both";
 
+export interface Subject {
+  id: string;
+  name: string;
+  levels: string[];
+  position: number;
+  created_at: string;
+}
+
 export interface MCQOption {
   label: string;
   text: string;
@@ -16,6 +24,7 @@ export interface Question {
   id: string;
   type: QuestionType;
   subject: string;
+  subject_id?: string | null;
   difficulty: Difficulty;
   course_level?: string | null;
   grade_level?: number | null;
@@ -144,7 +153,7 @@ export type QuestionTypeFilter = "mixed" | "mcq" | "frq";
 export interface TestConfig {
   subject: string;
   difficulty?: Difficulty;
-  course_level?: CourseLevel;
+  course_level?: string;
   grade_level?: number;
   num_questions: number;
   time_limit_seconds: number;

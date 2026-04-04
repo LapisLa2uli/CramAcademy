@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
+import SubjectPicker from "@/components/SubjectPicker";
 import type { Difficulty, Question, QuestionType } from "@/types";
 
 export default function ModerationEditPage() {
@@ -12,7 +13,9 @@ export default function ModerationEditPage() {
   const id = params.id;
   const { profile } = useAuth();
   const [q, setQ] = useState<Question | null>(null);
-  const [subject, setSubject] = useState("");
+  const [subjectId, setSubjectId] = useState("");
+  const [subjectName, setSubjectName] = useState("");
+  const [courseLevel, setCourseLevel] = useState("");
   const [content, setContent] = useState("");
   const [answer, setAnswer] = useState("");
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
@@ -27,7 +30,9 @@ export default function ModerationEditPage() {
     try {
       const data = await api.questions.get(id);
       setQ(data);
-      setSubject(data.subject);
+      setSubjectId(data.subject_id || "");
+      setSubjectName(data.subject || "");
+      setCourseLevel(data.course_level || "");
       setContent(data.content);
       setAnswer(data.answer || "");
       setDifficulty(data.difficulty);
@@ -51,7 +56,9 @@ export default function ModerationEditPage() {
     setSaving(true);
     try {
       await api.questions.update(id, {
-        subject,
+        subject: subjectName,
+        subject_id: subjectId || undefined,
+        course_level: courseLevel || undefined,
         content,
         answer,
         difficulty,
@@ -99,14 +106,18 @@ export default function ModerationEditPage() {
       </Link>
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Edit question</h1>
       <form onSubmit={save} className="card p-8 space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-          <input
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            className="input-field"
-          />
-        </div>
+        <SubjectPicker
+          subjectId={subjectId}
+          onSubjectChange={(id, name) => { setSubjectId(id); setSubjectName(name); }}
+          level={courseLevel}
+          onLevelChange={setCourseLevel}
+          allowAny={false}
+        />
+        {!subjectId && q?.subject && (
+          <p className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
+            Old subject value: &ldquo;{q.subject}&rdquo; — please re-assign using the dropdown above.
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
