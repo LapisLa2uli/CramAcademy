@@ -23,6 +23,7 @@ async def generate_test(
         course_level=req.course_level,
         grade_level=req.grade_level,
         question_source=req.question_source,
+        question_type=req.question_type,
     )
 
     if not questions:
@@ -77,6 +78,24 @@ async def get_test(test_id: str, authorization: str = Header(...)):
         {**tq["questions"], "position": tq["position"]}
         for tq in (tq_result.data or [])
     ]
+
+    # Attach question set context to questions that belong to a set
+    set_ids = {
+        q["question_set_id"]
+        for q in questions
+        if q.get("question_set_id")
+    }
+    set_context: dict[str, dict] = {}
+    for sid in set_ids:
+        sr = admin.table("question_sets").select("*").eq("id", sid).execute()
+        if sr.data:
+            set_context[sid] = sr.data[0]
+
+    for q in questions:
+        sid = q.get("question_set_id")
+        if sid and sid in set_context:
+            q["context_text"] = set_context[sid].get("context_text", "")
+            q["context_image_url"] = set_context[sid].get("context_image_url")
 
     return {**test, "questions": questions}
 

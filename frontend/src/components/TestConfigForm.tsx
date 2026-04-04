@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { CourseLevel, Difficulty, TestConfig, QuestionSource } from "@/types";
+import type { CourseLevel, Difficulty, TestConfig, QuestionSource, QuestionTypeFilter } from "@/types";
 
 interface TestConfigFormProps {
   onSubmit: (config: TestConfig) => void;
@@ -34,6 +34,7 @@ export default function TestConfigForm({ onSubmit, loading }: TestConfigFormProp
   const [numQuestions, setNumQuestions] = useState(10);
   const [timeMinutes, setTimeMinutes] = useState(60);
   const [questionSource, setQuestionSource] = useState<QuestionSource>("both");
+  const [questionType, setQuestionType] = useState<QuestionTypeFilter>("mixed");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,6 +46,7 @@ export default function TestConfigForm({ onSubmit, loading }: TestConfigFormProp
       num_questions: numQuestions,
       time_limit_seconds: timeMinutes * 60,
       question_source: questionSource,
+      question_type: questionType === "mixed" ? undefined : questionType,
     });
   };
 
@@ -132,6 +134,21 @@ export default function TestConfigForm({ onSubmit, loading }: TestConfigFormProp
           <option value="both">Personal + community (mixed)</option>
           <option value="personal">Personal bank only</option>
           <option value="community">Community bank only (moderator-approved)</option>
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Question type
+        </label>
+        <select
+          value={questionType}
+          onChange={(e) => setQuestionType(e.target.value as QuestionTypeFilter)}
+          className="input-field"
+        >
+          <option value="mixed">Mixed (MCQ + FRQ)</option>
+          <option value="mcq">Multiple Choice only</option>
+          <option value="frq">Free Response only</option>
         </select>
       </div>
 

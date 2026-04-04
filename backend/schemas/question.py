@@ -46,6 +46,8 @@ class QuestionCreate(BaseModel):
     explanation_image_url: Optional[str] = None
     rubric: Optional[dict] = None
     tags: list[str] = Field(default_factory=list)
+    question_set_id: Optional[str] = None
+    position_in_set: Optional[int] = None
 
     @model_validator(mode="after")
     def stem_or_image(self):
@@ -76,6 +78,8 @@ class QuestionResponse(BaseModel):
     validated: bool
     pool: str = "personal"
     rejection_reason: Optional[str] = None
+    question_set_id: Optional[str] = None
+    position_in_set: Optional[int] = None
     created_at: str
 
 
@@ -99,6 +103,35 @@ class QuestionUpdate(BaseModel):
     explanation_image_url: Optional[str] = None
     rubric: Optional[dict] = None
     tags: Optional[list[str]] = None
+    question_set_id: Optional[str] = None
+    position_in_set: Optional[int] = None
+
+
+# --- Question Set schemas ---
+
+class QuestionSetCreate(BaseModel):
+    context_text: str = ""
+    context_image_url: Optional[str] = None
+
+    @model_validator(mode="after")
+    def text_or_image(self):
+        has_text = bool(self.context_text.strip())
+        has_img = bool(self.context_image_url and self.context_image_url.strip())
+        if not has_text and not has_img:
+            raise ValueError("A question set must have context text and/or a context image.")
+        return self
+
+
+class QuestionSetResponse(BaseModel):
+    id: str
+    creator_id: Optional[str] = None
+    context_text: str
+    context_image_url: Optional[str] = None
+    created_at: str
+
+
+class QuestionSetDetailResponse(QuestionSetResponse):
+    questions: list[QuestionResponse] = []
 
 
 class QuestionFilter(BaseModel):

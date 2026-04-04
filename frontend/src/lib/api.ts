@@ -3,6 +3,7 @@ import {
   Submission,
   Protest,
   Question,
+  QuestionSet,
   TestConfig,
   UserAnswer,
   Profile,
@@ -198,6 +199,32 @@ export const api = {
     },
     deleteUser(id: string) {
       return apiFetch<{ status: string; id: string }>(`/admin/users/${id}`, {
+        method: "DELETE",
+      });
+    },
+  },
+
+  questionSets: {
+    create(data: { context_text: string; context_image_url?: string }) {
+      return apiFetch<QuestionSet>("/question-sets", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    get(setId: string) {
+      return apiFetch<QuestionSet>(`/question-sets/${setId}`);
+    },
+    list() {
+      return apiFetch<QuestionSet[]>("/question-sets");
+    },
+    addQuestion(setId: string, data: Partial<Question>) {
+      return apiFetch<Question>(`/question-sets/${setId}/questions`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    delete(setId: string) {
+      return apiFetch<{ status: string }>(`/question-sets/${setId}`, {
         method: "DELETE",
       });
     },

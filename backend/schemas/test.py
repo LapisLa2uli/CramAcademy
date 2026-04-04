@@ -14,6 +14,10 @@ class TestGenerateRequest(BaseModel):
         default="both",
         description="Personal bank, shared validated community bank, or both.",
     )
+    question_type: Optional[Literal["mcq", "frq"]] = Field(
+        default=None,
+        description="Filter by question type. None means mixed (both MCQ and FRQ).",
+    )
 
 
 class TestResponse(BaseModel):

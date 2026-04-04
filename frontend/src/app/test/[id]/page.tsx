@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import Timer from "@/components/Timer";
-import NavigationPanel from "@/components/NavigationPanel";
+import NavigationPanel, { type SetGroup } from "@/components/NavigationPanel";
 import QuestionRenderer from "@/components/QuestionRenderer";
 import type { Test, UserAnswer } from "@/types";
 
@@ -21,6 +21,7 @@ export default function TestPage() {
   const [started, setStarted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadProgress, setLoadProgress] = useState(0);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -29,9 +30,22 @@ export default function TestPage() {
     }
     if (!id) return;
 
+    setLoadProgress(10);
     api.tests.get(id).then((data) => {
-      setTest(data);
-      setLoading(false);
+      // Simulate progressive loading for UX
+      const total = data.questions.length;
+      let loaded = 0;
+      const step = () => {
+        loaded = Math.min(loaded + Math.ceil(total / 5), total);
+        setLoadProgress(10 + (loaded / total) * 90);
+        if (loaded < total) {
+          requestAnimationFrame(step);
+        } else {
+          setTest(data);
+          setLoading(false);
+        }
+      };
+      requestAnimationFrame(step);
     }).catch(() => {
       setLoading(false);
     });
@@ -83,10 +97,44 @@ export default function TestPage() {
     });
   };
 
+  // Compute question set groups for navigation panel
+  const setGroups = useMemo<SetGroup[]>(() => {
+    if (!test) return [];
+    const groups: SetGroup[] = [];
+    let i = 0;
+    while (i < test.questions.length) {
+      const sid = test.questions[i].question_set_id;
+      if (sid) {
+        const start = i;
+        while (i < test.questions.length && test.questions[i].question_set_id === sid) {
+          i++;
+        }
+        groups.push({ startIndex: start, count: i - start });
+      } else {
+        i++;
+      }
+    }
+    return groups;
+  }, [test]);
+
   if (loading || authLoading) {
+    const totalQ = test?.questions.length;
+    const loadedQ = totalQ ? Math.round((loadProgress / 100) * totalQ) : 0;
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-gray-400">Loading test...</div>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+        <div className="w-64">
+          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary-500 rounded-full transition-all duration-200"
+              style={{ width: `${loadProgress}%` }}
+            />
+          </div>
+          <p className="text-sm text-gray-500 mt-2 text-center">
+            {totalQ
+              ? `Loading questions... ${loadedQ} / ${totalQ}`
+              : "Loading test..."}
+          </p>
+        </div>
       </div>
     );
   }
@@ -135,6 +183,13 @@ export default function TestPage() {
       .filter((i) => i >= 0)
   );
 
+  // Determine if current question uses split layout (wider container needed)
+  const useSplit =
+    !!currentQuestion.context_text ||
+    !!currentQuestion.context_image_url ||
+    !!currentQuestion.question_image_url ||
+    (currentQuestion.content?.length ?? 0) > 300;
+
   return (
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Top Bar */}
@@ -172,16 +227,19 @@ export default function TestPage() {
           answered={answeredSet}
           flagged={flagged}
           onNavigate={setCurrentIndex}
+          setGroups={setGroups}
         />
 
         {/* Main Content */}
         <div className="flex-1 overflow-y-auto p-8">
-          <div className="max-w-3xl mx-auto">
+          <div className={useSplit ? "max-w-6xl mx-auto" : "max-w-3xl mx-auto"}>
             <QuestionRenderer
               question={currentQuestion}
               index={currentIndex}
               answer={answers.get(currentQuestion.id) || ""}
               onAnswer={(val) => handleAnswer(currentQuestion.id, val)}
+              contextText={currentQuestion.context_text ?? undefined}
+              contextImageUrl={currentQuestion.context_image_url ?? undefined}
             />
 
             {/* Navigation Buttons */}

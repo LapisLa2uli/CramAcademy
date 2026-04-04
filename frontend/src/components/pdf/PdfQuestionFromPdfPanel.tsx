@@ -13,6 +13,7 @@ import PdfRegionWorkspace, {
   REGION_COLORS,
 } from "./PdfRegionWorkspace";
 import ImageRegionWorkspace from "./ImageRegionWorkspace";
+import PageThumbnailStrip from "./PageThumbnailStrip";
 import RubricTableEditor, {
   type RubricRow,
   defaultRubricRows,
@@ -33,6 +34,9 @@ type QueuedQuestion = {
   content: string;
 };
 
+/** Page-keyed rects: pageNumber -> { mode -> NormRect } */
+type PageRects = Record<number, Partial<Record<RegionMode, NormRect>>>;
+
 interface Props {
   userId: string;
 }
@@ -47,7 +51,8 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
   const [sourceLabel, setSourceLabel] = useState("");
 
   const [qType, setQType] = useState<"mcq" | "frq">("mcq");
-  const [rects, setRects] = useState<Partial<Record<RegionMode, NormRect>>>({});
+  // Page-aware rects
+  const [pageRects, setPageRects] = useState<PageRects>({});
   const [drawMode, setDrawMode] = useState<RegionMode | null>(null);
 
   const [subject, setSubject] = useState("Mathematics");
@@ -80,7 +85,7 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
     setImagePages([]);
     imgElsRef.current.clear();
     setNumPages(0);
-    setRects({});
+    setPageRects({});
     setMsg(null);
     setSourceLabel("");
   };
@@ -122,20 +127,26 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
     setSourceLabel(`${urls.length} image(s)`);
   };
 
+  // Page-aware rect setters
   const setRect = useCallback((mode: RegionMode, rect: NormRect) => {
-    setRects((r) => ({ ...r, [mode]: rect }));
-  }, []);
+    setPageRects((prev) => ({
+      ...prev,
+      [page]: { ...(prev[page] || {}), [mode]: rect },
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   const clearRect = useCallback((mode: RegionMode) => {
-    setRects((r) => {
-      const next = { ...r };
-      delete next[mode];
-      return next;
+    setPageRects((prev) => {
+      const pageR = { ...(prev[page] || {}) };
+      delete pageR[mode];
+      return { ...prev, [page]: pageR };
     });
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   const resetCurrentRegions = () => {
-    setRects({});
+    setPageRects({});
     setAnswer("");
     setContentNote("");
     setExplanation("");
@@ -146,13 +157,34 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
     setDrawMode(null);
   };
 
-  const cropRegion = async (rect: NormRect): Promise<Blob> => {
+  // Crop a region from a specific page
+  const cropRegion = async (rect: NormRect, pageNum: number): Promise<Blob> => {
     if (pdf) {
-      return cropPdfRegionToPng(pdf, page, CROP_SCALE, rect);
+      return cropPdfRegionToPng(pdf, pageNum, CROP_SCALE, rect);
     }
-    const imgEl = imgElsRef.current.get(page);
+    const imgEl = imgElsRef.current.get(pageNum);
     if (!imgEl) throw new Error("Image element not loaded for this page");
     return cropImageRegionToPng(imgEl, rect);
+  };
+
+  // Find which page a given region mode is on
+  const findRegion = (mode: RegionMode): { pageNum: number; rect: NormRect } | null => {
+    for (const [pStr, rects] of Object.entries(pageRects)) {
+      const r = rects[mode];
+      if (r) return { pageNum: Number(pStr), rect: r };
+    }
+    return null;
+  };
+
+  // Collect all drawn region modes across all pages
+  const allDrawnModes = (): RegionMode[] => {
+    const modes = new Set<RegionMode>();
+    for (const rects of Object.values(pageRects)) {
+      for (const m of Object.keys(rects) as RegionMode[]) {
+        modes.add(m);
+      }
+    }
+    return [...modes];
   };
 
   const addToQueue = async () => {
@@ -160,13 +192,15 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
       setMsg("Upload a PDF or images first.");
       return;
     }
-    if (!rects.stem) {
-      setMsg("Draw a box around the question (select “Draw question region”, then drag on the page).");
+
+    const stemRegion = findRegion("stem");
+    if (!stemRegion) {
+      setMsg("Draw a box around the question (select \u201cDraw question region\u201d, then drag on the page).");
       return;
     }
     if (qType === "mcq") {
       for (const L of ["A", "B", "C", "D"] as const) {
-        if (!rects[L]) {
+        if (!findRegion(L)) {
           setMsg(`Draw a region for choice ${L}.`);
           return;
         }
@@ -193,7 +227,7 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
     setBusy(true);
     setMsg(null);
     try {
-      const stemBlob = await cropRegion(rects.stem);
+      const stemBlob = await cropRegion(stemRegion.rect, stemRegion.pageNum);
       const stemFile = new File([stemBlob], "stem.png", { type: "image/png" });
       const question_image_url = await uploadQuestionImage(userId, stemFile);
 
@@ -202,8 +236,8 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
         const labels = ["A", "B", "C", "D"] as const;
         options = [];
         for (const L of labels) {
-          const r = rects[L]!;
-          const blob = await cropRegion(r);
+          const region = findRegion(L)!;
+          const blob = await cropRegion(region.rect, region.pageNum);
           const f = new File([blob], `choice-${L}.png`, { type: "image/png" });
           const url = await uploadQuestionImage(userId, f);
           options.push({ label: L, text: "", image_url: url });
@@ -285,14 +319,24 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
     }
   };
 
+  // Current page rects for the workspace
+  const currentPageRects = pageRects[page] || {};
+
+  // Build region location summary
+  const drawnModes = allDrawnModes();
+  const regionSummaryItems = drawnModes.map((mode) => {
+    const region = findRegion(mode);
+    return region ? { mode, page: region.pageNum } : null;
+  }).filter(Boolean) as { mode: RegionMode; page: number }[];
+
   return (
     <div className="card p-8 space-y-8 max-w-5xl">
       <div>
         <h2 className="text-xl font-semibold text-gray-800">Create questions from a PDF or images</h2>
         <p className="text-sm text-gray-500 mt-1">
-          Upload a multi-page PDF or select multiple images, pick a page, then drag rectangles on the
-          preview. Mark the question block, and for MCQs mark each choice (A–D). FRQs use the rubric
-          table; type the model answer. Add each question to the list, then submit all.
+          Upload a multi-page PDF or select multiple images. Scroll through pages and drag
+          rectangles on the preview &mdash; regions persist across pages, so you can select the
+          question from one page and choices from another.
         </p>
       </div>
 
@@ -332,27 +376,20 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
               <option value="frq">Free response</option>
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Page</label>
-            <select
-              value={page}
-              onChange={(e) => {
-                setPage(Number(e.target.value));
-                setRects({});
-                setDrawMode(null);
-              }}
-              className="input-field"
-              disabled={numPages === 0}
-            >
-              {Array.from({ length: numPages }, (_, i) => i + 1).map((p) => (
-                <option key={p} value={p}>
-                  Page {p}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
       </div>
+
+      {/* Page thumbnail strip */}
+      {(pdf || imagePages.length > 0) && (
+        <PageThumbnailStrip
+          pdf={pdf}
+          imagePages={imagePages}
+          numPages={numPages}
+          currentPage={page}
+          onSelectPage={setPage}
+          pageRects={pageRects}
+        />
+      )}
 
       {(pdf || imagePages.length > 0) && (
         <>
@@ -383,6 +420,30 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
               Clear all regions
             </button>
           </div>
+
+          {/* Region location summary */}
+          {regionSummaryItems.length > 0 && (
+            <div className="flex flex-wrap gap-2 text-xs">
+              {regionSummaryItems.map(({ mode, page: p }) => (
+                <span
+                  key={mode}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full border"
+                  style={{
+                    borderColor: REGION_COLORS[mode]?.border ?? "#666",
+                    color: REGION_COLORS[mode]?.border ?? "#666",
+                    backgroundColor: REGION_COLORS[mode]?.bg ?? "transparent",
+                  }}
+                >
+                  <span
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: REGION_COLORS[mode]?.border ?? "#666" }}
+                  />
+                  {MODE_LABELS[mode]}: Page {p}
+                </span>
+              ))}
+            </div>
+          )}
+
           {drawMode && (
             <p className="text-sm text-amber-800 bg-amber-50 rounded-lg px-3 py-2">
               Drag on the page to draw a box for: <strong>{MODE_LABELS[drawMode]}</strong>
@@ -394,7 +455,7 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
               pdf={pdf}
               pageNumber={page}
               scale={viewScale}
-              rects={rects}
+              rects={currentPageRects}
               activeMode={drawMode}
               onRectSet={setRect}
               onClear={clearRect}
@@ -402,7 +463,7 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
           ) : imagePages.length > 0 ? (
             <ImageRegionWorkspace
               src={imagePages[page - 1]}
-              rects={rects}
+              rects={currentPageRects}
               activeMode={drawMode}
               onRectSet={setRect}
               onClear={clearRect}
@@ -559,7 +620,7 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
             onClick={() => void addToQueue()}
             className="btn-primary"
           >
-            {busy ? "Processing…" : "Crop, upload & add to list"}
+            {busy ? "Processing\u2026" : "Crop, upload & add to list"}
           </button>
         </div>
       </div>
@@ -571,7 +632,7 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
             {queue.map((q, i) => (
               <li key={i}>
                 {q.type.toUpperCase()} — answer: {q.answer.slice(0, 40)}
-                {q.answer.length > 40 ? "…" : ""}
+                {q.answer.length > 40 ? "\u2026" : ""}
               </li>
             ))}
           </ul>
@@ -581,7 +642,7 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
             onClick={() => void submitAll()}
             className="btn-primary mt-4"
           >
-            {busy ? "Submitting…" : `Submit all ${queue.length} question(s)`}
+            {busy ? "Submitting\u2026" : `Submit all ${queue.length} question(s)`}
           </button>
         </div>
       )}

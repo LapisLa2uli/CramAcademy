@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import katex from "katex";
 
 /**
- * Wraps a text input/textarea. When the user hovers over an inline `$...$`
- * expression in the rendered preview tooltip, they see the LaTeX rendered.
- * This component shows a floating preview near the mouse when hovering over
- * the input and it contains `$...$`.
+ * Wraps a text input/textarea. When the value contains `$...$` or `$$...$$`,
+ * a persistent inline preview of the rendered LaTeX is shown below the input.
  */
 export default function LatexHoverPreview({
   value,
@@ -16,10 +14,8 @@ export default function LatexHoverPreview({
   value: string;
   children: React.ReactNode;
 }) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const tipRef = useRef<HTMLDivElement>(null);
-  const [show, setShow] = useState(false);
   const [html, setHtml] = useState("");
+  const [collapsed, setCollapsed] = useState(false);
 
   const hasLatex = /\$.*?\$/.test(value);
 
@@ -48,19 +44,27 @@ export default function LatexHoverPreview({
   if (!hasLatex) return <>{children}</>;
 
   return (
-    <div
-      ref={wrapRef}
-      className="relative"
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
+    <div className="space-y-1">
       {children}
-      {show && html && (
-        <div
-          ref={tipRef}
-          className="absolute z-40 left-0 right-0 top-full mt-1 p-3 bg-white border border-gray-300 rounded-lg shadow-lg text-sm text-gray-800 prose prose-sm max-h-48 overflow-auto"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+      {html && (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            className="flex items-center gap-1.5 w-full px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+          >
+            <span className="inline-block transition-transform" style={{ transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>
+              &#9662;
+            </span>
+            LaTeX Preview
+          </button>
+          {!collapsed && (
+            <div
+              className="px-3 pb-2 text-sm text-gray-800 prose prose-sm max-h-48 overflow-auto"
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          )}
+        </div>
       )}
     </div>
   );

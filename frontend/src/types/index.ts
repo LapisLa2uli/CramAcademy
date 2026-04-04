@@ -32,8 +32,22 @@ export interface Question {
   validated: boolean;
   pool?: QuestionPool;
   rejection_reason?: string | null;
+  question_set_id?: string | null;
+  position_in_set?: number | null;
+  /** Attached by the backend when the question belongs to a set */
+  context_text?: string | null;
+  context_image_url?: string | null;
   created_at: string;
   position?: number;
+}
+
+export interface QuestionSet {
+  id: string;
+  creator_id?: string;
+  context_text: string;
+  context_image_url?: string | null;
+  created_at: string;
+  questions: Question[];
 }
 
 export interface Profile {
@@ -125,6 +139,8 @@ export interface UserAnswer {
   user_answer: string;
 }
 
+export type QuestionTypeFilter = "mixed" | "mcq" | "frq";
+
 export interface TestConfig {
   subject: string;
   difficulty?: Difficulty;
@@ -133,4 +149,5 @@ export interface TestConfig {
   num_questions: number;
   time_limit_seconds: number;
   question_source?: QuestionSource;
+  question_type?: QuestionTypeFilter;
 }

@@ -14,6 +14,7 @@ import RubricTableEditor, {
   buildRubricFromRows,
 } from "@/components/RubricTableEditor";
 import LatexHoverPreview from "@/components/LatexHoverPreview";
+import QuestionSetForm from "@/components/QuestionSetForm";
 
 const PdfQuestionFromPdfPanel = dynamic(
   () => import("@/components/pdf/PdfQuestionFromPdfPanel"),
@@ -34,7 +35,7 @@ export default function DashboardPage() {
   const [generating, setGenerating] = useState(false);
   const [recentTests, setRecentTests] = useState<RecentTest[]>([]);
   const [tab, setTab] = useState<"test" | "contribute">("test");
-  const [contributeMode, setContributeMode] = useState<"standard" | "pdf">("standard");
+  const [contributeMode, setContributeMode] = useState<"standard" | "pdf" | "question-set">("standard");
 
   const handleGenerate = async (config: TestConfig) => {
     setGenerating(true);
@@ -148,11 +149,24 @@ export default function DashboardPage() {
               >
                 From PDF / Images
               </button>
+              <button
+                type="button"
+                onClick={() => setContributeMode("question-set")}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  contributeMode === "question-set"
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Question Set
+              </button>
             </div>
             {contributeMode === "standard" ? (
               <QuestionSubmitForm />
-            ) : (
+            ) : contributeMode === "pdf" ? (
               <PdfQuestionFromPdfPanel userId={user.id} />
+            ) : (
+              <QuestionSetForm />
             )}
           </div>
         )}
