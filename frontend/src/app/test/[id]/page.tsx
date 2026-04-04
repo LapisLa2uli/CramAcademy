@@ -231,8 +231,8 @@ export default function TestPage() {
         />
 
         {/* Main Content */}
-        <div className="flex-1 overflow-y-auto p-8">
-          <div className={useSplit ? "max-w-6xl mx-auto" : "max-w-3xl mx-auto"}>
+        <div className={`flex-1 flex flex-col ${useSplit ? "" : "overflow-y-auto"} p-8`}>
+          <div className={`${useSplit ? "max-w-6xl flex-1 min-h-0" : "max-w-3xl"} mx-auto w-full`}>
             <QuestionRenderer
               question={currentQuestion}
               index={currentIndex}
@@ -241,50 +241,50 @@ export default function TestPage() {
               contextText={currentQuestion.context_text ?? undefined}
               contextImageUrl={currentQuestion.context_image_url ?? undefined}
             />
+          </div>
 
-            {/* Navigation Buttons */}
-            <div className="flex items-center justify-between mt-10 pt-6 border-t border-gray-200">
-              {currentIndex > 0 ? (
-                <button
-                  onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))}
-                  className="btn-secondary"
-                >
-                  Previous
-                </button>
-              ) : (
-                <span />
-              )}
-
+          {/* Navigation Buttons */}
+          <div className={`${useSplit ? "max-w-6xl" : "max-w-3xl"} mx-auto w-full flex items-center justify-between ${useSplit ? "pt-3 mt-auto border-t border-gray-200 shrink-0" : "mt-10 pt-6 border-t border-gray-200"}`}>
+            {currentIndex > 0 ? (
               <button
-                onClick={toggleFlag}
-                className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
-                  flagged.has(currentIndex)
-                    ? "bg-amber-100 text-amber-700"
-                    : "text-gray-500 hover:bg-gray-100"
-                }`}
+                onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))}
+                className="btn-secondary"
               >
-                {flagged.has(currentIndex) ? "Unflag" : "Flag for Review"}
+                Previous
               </button>
+            ) : (
+              <span />
+            )}
 
-              {currentIndex < test.questions.length - 1 ? (
-                <button
-                  onClick={() =>
-                    setCurrentIndex((i) => Math.min(test.questions.length - 1, i + 1))
-                  }
-                  className="btn-primary"
-                >
-                  Next
-                </button>
-              ) : (
-                <button
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  className="btn-primary bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500"
-                >
-                  {submitting ? "Submitting…" : "Submit Test"}
-                </button>
-              )}
-            </div>
+            <button
+              onClick={toggleFlag}
+              className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
+                flagged.has(currentIndex)
+                  ? "bg-amber-100 text-amber-700"
+                  : "text-gray-500 hover:bg-gray-100"
+              }`}
+            >
+              {flagged.has(currentIndex) ? "Unflag" : "Flag for Review"}
+            </button>
+
+            {currentIndex < test.questions.length - 1 ? (
+              <button
+                onClick={() =>
+                  setCurrentIndex((i) => Math.min(test.questions.length - 1, i + 1))
+                }
+                className="btn-primary"
+              >
+                Next
+              </button>
+            ) : (
+              <button
+                onClick={handleSubmit}
+                disabled={submitting}
+                className="btn-primary bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500"
+              >
+                {submitting ? "Submitting…" : "Submit Test"}
+              </button>
+            )}
           </div>
         </div>
       </div>

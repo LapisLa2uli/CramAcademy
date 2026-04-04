@@ -81,7 +81,11 @@ async function apiFetch<T>(
       typeof detail === "string"
         ? detail
         : Array.isArray(detail)
-          ? detail.join("; ")
+          ? detail
+              .map((d: unknown) =>
+                typeof d === "string" ? d : typeof d === "object" && d !== null && "msg" in d ? (d as { msg: string }).msg : JSON.stringify(d)
+              )
+              .join("; ")
           : detail != null
             ? JSON.stringify(detail)
             : res.statusText;

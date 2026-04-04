@@ -14,7 +14,8 @@ class DifficultyLevel(str, Enum):
     hard = "hard"
 
 
-CourseLevel = Literal["S", "S+", "H", "H+"]
+# Legacy alias — levels are now dynamic per-subject, so accept any string.
+CourseLevel = str
 
 
 class MCQOption(BaseModel):

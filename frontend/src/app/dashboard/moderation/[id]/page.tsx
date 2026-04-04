@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import SubjectPicker from "@/components/SubjectPicker";
@@ -10,7 +10,9 @@ import type { Difficulty, Question, QuestionType } from "@/types";
 
 export default function ModerationEditPage() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const id = params.id;
+  const fromSet = searchParams.get("from_set");
   const { profile } = useAuth();
   const [q, setQ] = useState<Question | null>(null);
   const [subjectId, setSubjectId] = useState("");
@@ -101,9 +103,15 @@ export default function ModerationEditPage() {
 
   return (
     <div className="max-w-2xl">
-      <Link href="/dashboard/moderation/queue" className="text-sm text-primary-700 mb-4 inline-block">
-        ← Moderation queue
-      </Link>
+      {fromSet ? (
+        <Link href="/dashboard/moderation/community" className="text-sm text-purple-700 mb-4 inline-block">
+          ← Back to question set
+        </Link>
+      ) : (
+        <Link href="/dashboard/moderation/queue" className="text-sm text-primary-700 mb-4 inline-block">
+          ← Moderation queue
+        </Link>
+      )}
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Edit question</h1>
       <form onSubmit={save} className="card p-8 space-y-4">
         <SubjectPicker

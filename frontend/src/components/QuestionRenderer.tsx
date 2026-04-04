@@ -196,12 +196,12 @@ export default function QuestionRenderer({
   // --- Split layout ---
   if (split) {
     return (
-      <div className="space-y-4">
+      <div className="flex flex-col h-full">
         {questionHeader}
 
-        <div className="flex flex-col md:flex-row gap-6 ml-0 md:ml-12">
+        <div className="flex flex-col md:flex-row gap-6 ml-0 md:ml-12 mt-4 flex-1 min-h-0">
           {/* Left panel: context / passage / image */}
-          <div className="w-full md:w-1/2 md:max-h-[calc(100vh-240px)] md:overflow-y-auto md:sticky md:top-0 space-y-4 pr-2">
+          <div className="w-full md:w-1/2 md:overflow-y-auto space-y-4 pr-2">
             {contextImageUrl && (
               <div className="w-fit max-w-full">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -247,7 +247,7 @@ export default function QuestionRenderer({
           </div>
 
           {/* Right panel: question stem (if context mode) + choices/answer */}
-          <div className="w-full md:w-1/2 md:max-h-[calc(100vh-240px)] md:overflow-y-auto space-y-4">
+          <div className="w-full md:w-1/2 md:overflow-y-auto space-y-4">
             {/* Show question stem on right when context is on left */}
             {(contextText || contextImageUrl) && question.content?.trim() && (
               question.latex_enabled ? (
