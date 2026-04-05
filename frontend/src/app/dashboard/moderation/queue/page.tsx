@@ -168,8 +168,8 @@ export default function ModerationQueuePage() {
       ) : items.length === 0 ? (
         <div className="card p-8 text-center text-gray-500">No questions awaiting review.</div>
       ) : (
-        <div className="space-y-4">
-          {items.map((q) => (
+        <div className="space-y-4" data-tutorial="queue-list">
+          {items.map((q, qi) => (
             <div
               key={q.id}
               className="card p-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
@@ -207,6 +207,7 @@ export default function ModerationQueuePage() {
                   disabled={busy === q.id}
                   onClick={() => approve(q.id)}
                   className="btn-primary text-sm"
+                  {...(qi === 0 ? { "data-tutorial": "approve-btn" } : {})}
                 >
                   Approve
                 </button>
@@ -218,6 +219,7 @@ export default function ModerationQueuePage() {
                     setRejectReason("");
                   }}
                   className="btn-secondary text-sm"
+                  {...(qi === 0 ? { "data-tutorial": "reject-btn" } : {})}
                 >
                   Reject…
                 </button>

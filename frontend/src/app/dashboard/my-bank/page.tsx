@@ -71,8 +71,8 @@ export default function MyBankPage() {
           No questions yet. Add some from the Contribute tab on the dashboard.
         </div>
       ) : (
-        <div className="space-y-4">
-          {items.map((q) => (
+        <div className="space-y-4" data-tutorial="bank-list">
+          {items.map((q, qi) => (
             <div
               key={q.id}
               className="card p-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
@@ -115,6 +115,7 @@ export default function MyBankPage() {
                     disabled={busy === q.id}
                     onClick={() => submitReview(q.id)}
                     className="btn-primary text-sm"
+                    {...(qi === 0 ? { "data-tutorial": "submit-review-btn" } : {})}
                   >
                     Submit for review
                   </button>

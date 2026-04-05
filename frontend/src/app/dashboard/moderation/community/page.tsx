@@ -129,7 +129,7 @@ export default function ModerationCommunityBankPage() {
       ) : displayItems.length === 0 ? (
         <div className="card p-8 text-center text-gray-500">No published community questions.</div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-4" data-tutorial="community-list">
           {displayItems.map((item) => {
             if (item.kind === "standalone") {
               const q = item.question;
@@ -149,7 +149,7 @@ export default function ModerationCommunityBankPage() {
                     <p className="text-gray-800 line-clamp-3">{q.content || "(image stem)"}</p>
                   </div>
                   <div className="flex flex-wrap gap-2 shrink-0">
-                    <Link href={`/dashboard/moderation/${q.id}`} className="btn-secondary text-sm">
+                    <Link href={`/dashboard/moderation/${q.id}`} className="btn-secondary text-sm" data-tutorial="edit-btn">
                       Edit
                     </Link>
                     <button

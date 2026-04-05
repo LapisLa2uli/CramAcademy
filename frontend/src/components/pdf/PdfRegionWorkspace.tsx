@@ -5,7 +5,7 @@ import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import type { NormRect } from "@/lib/pdf/cropPdfPage";
 import { clampNormRect } from "@/lib/pdf/cropPdfPage";
 
-export type RegionMode = "stem" | "A" | "B" | "C" | "D";
+export type RegionMode = "stem" | "A" | "B" | "C" | "D" | "context";
 
 const MODE_LABELS: Record<RegionMode, string> = {
   stem: "Question",
@@ -13,6 +13,7 @@ const MODE_LABELS: Record<RegionMode, string> = {
   B: "Choice B",
   C: "Choice C",
   D: "Choice D",
+  context: "Context / Passage",
 };
 
 const REGION_COLORS: Record<RegionMode, { border: string; bg: string }> = {
@@ -21,6 +22,7 @@ const REGION_COLORS: Record<RegionMode, { border: string; bg: string }> = {
   B: { border: "#2563eb", bg: "rgba(37,99,235,0.15)" },
   C: { border: "#059669", bg: "rgba(5,150,105,0.15)" },
   D: { border: "#d97706", bg: "rgba(217,119,6,0.15)" },
+  context: { border: "#0891b2", bg: "rgba(8,145,178,0.15)" },
 };
 
 interface PdfRegionWorkspaceProps {

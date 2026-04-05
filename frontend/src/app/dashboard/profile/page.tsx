@@ -134,6 +134,7 @@ export default function ProfilePage() {
         <div className="flex flex-col sm:flex-row sm:items-center gap-4 border-b border-gray-200 pb-6 mb-6">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
+            data-tutorial="profile-avatar"
             src={profileAvatarSrc(me.avatar_url)}
             alt=""
             width={80}
@@ -170,14 +171,14 @@ export default function ProfilePage() {
         )}
         {cal && (
           <div className="mb-2">
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">Contributions</h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-3" data-tutorial="contribution-heatmap">Contributions</h2>
             <ContributionHeatmap days={cal.days} />
           </div>
         )}
       </div>
 
       <form onSubmit={saveProfileOnly} className="card p-8 space-y-6 max-w-2xl mb-6">
-        <h2 className="text-lg font-semibold text-gray-900">Username, bio &amp; photo</h2>
+        <h2 className="text-lg font-semibold text-gray-900" data-tutorial="profile-username">Username, bio &amp; photo</h2>
         <p className="text-sm text-gray-600">
           Save this section without touching themes or frames. Usernames are stored in lowercase (3–30
           characters: letters, digits, underscores). Use an https link for your profile photo, or leave

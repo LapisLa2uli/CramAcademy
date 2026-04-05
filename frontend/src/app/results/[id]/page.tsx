@@ -95,7 +95,7 @@ export default function ResultsPage() {
 
       <main className="max-w-5xl mx-auto px-6 py-10">
         {/* Summary */}
-        <div className="card p-8 mb-8">
+        <div className="card p-8 mb-8" data-tutorial="results-summary">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900 mb-1">Test Results</h1>
@@ -126,7 +126,7 @@ export default function ResultsPage() {
         </div>
 
         {/* Submissions */}
-        <div className="space-y-4">
+        <div className="space-y-4" data-tutorial="results-questions">
           {submissions.map((sub) => {
             const question = questionMap.get(sub.question_id);
             if (!question) return null;

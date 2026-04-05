@@ -73,7 +73,7 @@ export default function AdminPage() {
         account from here.
       </p>
       <div className="mb-8">
-        <Link href="/dashboard/admin/subjects" className="btn-secondary text-sm inline-flex items-center gap-1">
+        <Link href="/dashboard/admin/subjects" className="btn-secondary text-sm inline-flex items-center gap-1" data-tutorial="subjects-link">
           Manage Subjects &amp; Levels →
         </Link>
       </div>
@@ -81,7 +81,7 @@ export default function AdminPage() {
       {loading ? (
         <p className="text-gray-400">Loading…</p>
       ) : (
-        <div className="overflow-x-auto card">
+        <div className="overflow-x-auto card" data-tutorial="user-list">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 text-left text-gray-500">

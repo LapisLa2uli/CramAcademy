@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import Timer from "@/components/Timer";
+import TutorialButton from "@/components/TutorialButton";
 import NavigationPanel, { type SetGroup } from "@/components/NavigationPanel";
 import QuestionRenderer from "@/components/QuestionRenderer";
 import type { Test, UserAnswer } from "@/types";
@@ -205,15 +206,21 @@ export default function TestPage() {
             {test.grade_level != null ? ` · G${test.grade_level}` : ""}
           </span>
         </div>
-        <Timer
-          totalSeconds={test.time_limit_seconds}
-          onTimeUp={handleSubmit}
-          running={true}
-        />
+        <div className="flex items-center gap-3">
+          <div data-tutorial="test-timer">
+            <Timer
+              totalSeconds={test.time_limit_seconds}
+              onTimeUp={handleSubmit}
+              running={true}
+            />
+          </div>
+          <TutorialButton />
+        </div>
         <button
           onClick={handleSubmit}
           disabled={submitting}
           className="btn-primary text-sm"
+          data-tutorial="submit-test-btn"
         >
           {submitting ? "Submitting..." : "Submit Test"}
         </button>
@@ -221,14 +228,16 @@ export default function TestPage() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left Navigation */}
-        <NavigationPanel
-          total={test.questions.length}
-          current={currentIndex}
-          answered={answeredSet}
-          flagged={flagged}
-          onNavigate={setCurrentIndex}
-          setGroups={setGroups}
-        />
+        <div data-tutorial="nav-panel">
+          <NavigationPanel
+            total={test.questions.length}
+            current={currentIndex}
+            answered={answeredSet}
+            flagged={flagged}
+            onNavigate={setCurrentIndex}
+            setGroups={setGroups}
+          />
+        </div>
 
         {/* Main Content */}
         <div className={`flex-1 flex flex-col ${useSplit ? "" : "overflow-y-auto"} p-8`}>
@@ -258,6 +267,7 @@ export default function TestPage() {
 
             <button
               onClick={toggleFlag}
+              data-tutorial="flag-btn"
               className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
                 flagged.has(currentIndex)
                   ? "bg-amber-100 text-amber-700"

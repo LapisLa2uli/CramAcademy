@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { profileAvatarSrc } from "@/lib/avatar";
+import TutorialButton from "@/components/TutorialButton";
 
 const nav = [
   { href: "/dashboard", label: "Home" },
@@ -44,7 +45,7 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-200">
+      <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-4">
             <Link href="/" className="text-xl font-bold text-primary-700">
@@ -76,6 +77,7 @@ export default function DashboardLayout({
             </div>
           </div>
           <div className="flex items-center gap-3 text-sm">
+            <TutorialButton />
             <Link
               href="/dashboard/profile"
               title={user.email ?? undefined}

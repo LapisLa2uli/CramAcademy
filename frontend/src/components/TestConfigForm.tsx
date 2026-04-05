@@ -147,7 +147,7 @@ export default function TestConfigForm({ onSubmit, loading }: TestConfigFormProp
         </div>
       </div>
 
-      <button type="submit" disabled={loading} className="btn-primary w-full">
+      <button type="submit" disabled={loading} className="btn-primary w-full" data-tutorial="generate-btn">
         {loading ? "Generating Test..." : "Generate Test"}
       </button>
     </form>

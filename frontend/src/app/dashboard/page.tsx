@@ -22,6 +22,11 @@ const PdfQuestionFromPdfPanel = dynamic(
   { ssr: false, loading: () => <p className="text-gray-500 text-sm">Loading PDF tools…</p> }
 );
 
+const PdfQuestionSetFromPdfPanel = dynamic(
+  () => import("@/components/pdf/PdfQuestionSetFromPdfPanel"),
+  { ssr: false, loading: () => <p className="text-gray-500 text-sm">Loading PDF tools…</p> }
+);
+
 interface RecentTest {
   id: string;
   subject?: string;
@@ -36,7 +41,7 @@ export default function DashboardPage() {
   const [generating, setGenerating] = useState(false);
   const [recentTests, setRecentTests] = useState<RecentTest[]>([]);
   const [tab, setTab] = useState<"test" | "contribute">("test");
-  const [contributeMode, setContributeMode] = useState<"standard" | "pdf" | "question-set">("standard");
+  const [contributeMode, setContributeMode] = useState<"standard" | "pdf" | "question-set" | "pdf-question-set">("standard");
 
   const handleGenerate = async (config: TestConfig) => {
     setGenerating(true);
@@ -59,7 +64,7 @@ export default function DashboardPage() {
         <h1 className="text-3xl font-bold text-gray-900 mb-8">Dashboard</h1>
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-8 bg-gray-100 p-1 rounded-lg w-fit">
+        <div className="flex gap-1 mb-8 bg-gray-100 p-1 rounded-lg w-fit" data-tutorial="main-tabs">
           <button
             onClick={() => setTab("test")}
             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -84,10 +89,12 @@ export default function DashboardPage() {
 
         {tab === "test" && (
           <div className="grid lg:grid-cols-2 gap-10">
-            <TestConfigForm onSubmit={handleGenerate} loading={generating} />
+            <div data-tutorial="test-config">
+              <TestConfigForm onSubmit={handleGenerate} loading={generating} />
+            </div>
 
             <div>
-              <h2 className="text-lg font-semibold text-gray-800 mb-4">Recent Tests</h2>
+              <h2 className="text-lg font-semibold text-gray-800 mb-4" data-tutorial="recent-tests">Recent Tests</h2>
               {recentTests.length === 0 ? (
                 <div className="card p-8 text-center text-gray-400">
                   <p>No tests yet. Generate your first test!</p>
@@ -127,47 +134,35 @@ export default function DashboardPage() {
 
         {tab === "contribute" && (
           <div className="space-y-6">
-            <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
-              <button
-                type="button"
-                onClick={() => setContributeMode("standard")}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  contributeMode === "standard"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                Standard form
-              </button>
-              <button
-                type="button"
-                onClick={() => setContributeMode("pdf")}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  contributeMode === "pdf"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                From PDF / Images
-              </button>
-              <button
-                type="button"
-                onClick={() => setContributeMode("question-set")}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  contributeMode === "question-set"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                Question Set
-              </button>
+            <div className="grid grid-cols-2 gap-1 bg-gray-100 p-1 rounded-lg w-fit" data-tutorial="contribute-tabs">
+              {([
+                { key: "standard", label: "Standard Form" },
+                { key: "question-set", label: "Question Set" },
+                { key: "pdf", label: "From PDF / Images" },
+                { key: "pdf-question-set", label: "Set from PDF" },
+              ] as const).map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setContributeMode(item.key)}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    contributeMode === item.key
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
             </div>
             {contributeMode === "standard" ? (
               <QuestionSubmitForm />
             ) : contributeMode === "pdf" ? (
               <PdfQuestionFromPdfPanel userId={user.id} />
-            ) : (
+            ) : contributeMode === "question-set" ? (
               <QuestionSetForm />
+            ) : (
+              <PdfQuestionSetFromPdfPanel userId={user.id} />
             )}
           </div>
         )}
