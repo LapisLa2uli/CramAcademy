@@ -15,31 +15,13 @@ const dashboardSteps: TutorialStep[] = [
   },
   {
     selector: '[data-tutorial="test-config"]',
-    content: "Configure your test here: choose a subject, difficulty, number of questions, and time limit.",
+    content: "On the 'Take a Test' tab, configure your test: choose a subject, difficulty, number of questions, and time limit, then click Generate.",
     position: "right",
-  },
-  {
-    selector: '[data-tutorial="generate-btn"]',
-    content: "Click Generate to create a new test based on your settings.",
-    position: "top",
-  },
-  {
-    selector: '[data-tutorial="recent-tests"]',
-    content: "Your recent tests appear here. Click any to view results or resume.",
-    position: "top",
-  },
-];
-
-const contributeSteps: TutorialStep[] = [
-  {
-    selector: '[data-tutorial="main-tabs"]',
-    content: "Switch to 'Contribute Questions' to create questions for the community.",
-    position: "bottom",
   },
   {
     selector: '[data-tutorial="contribute-tabs"]',
     content:
-      "Choose how to create questions: type them in a form, upload a PDF/image, or create a question set (group of related questions sharing a passage).",
+      "On the 'Contribute Questions' tab, choose how to create questions: type them in a standard form, upload from a PDF/image, or create a question set sharing a common passage.",
     position: "bottom",
   },
 ];
@@ -175,5 +157,3 @@ export function getTutorialForPath(pathname: string): TutorialStep[] | null {
   const found = tutorials.find((t) => t.match(pathname));
   return found?.steps ?? null;
 }
-
-export { contributeSteps };
