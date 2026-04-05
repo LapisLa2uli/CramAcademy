@@ -142,7 +142,6 @@ export default function ModerationCommunityBankPage() {
                     <div className="flex flex-wrap gap-2 text-xs text-gray-500 mb-1">
                       <span>{q.subject}</span>
                       <span>{q.type}</span>
-                      <span>{q.difficulty}</span>
                       <span className="text-emerald-600">published</span>
                       <QuestionBadges q={q} />
                     </div>
@@ -186,7 +185,6 @@ export default function ModerationCommunityBankPage() {
                       </span>
                       <span className="text-gray-500">{questions.length} question{questions.length !== 1 ? "s" : ""}</span>
                       {firstQ.subject && <span className="text-gray-500">{firstQ.subject}</span>}
-                      <span className="text-gray-500">{firstQ.difficulty}</span>
                       <span className="text-emerald-600 text-xs">published</span>
                       {hasAnyMissingSubject && (
                         <span className="text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">

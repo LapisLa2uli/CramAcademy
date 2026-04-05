@@ -25,7 +25,13 @@ class Settings(BaseSettings):
     cors_origins: list[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "https://cram-academy.vercel.app"
     ]
+
+    extraction_enabled: bool = True
+    extraction_max_pages: int = 24
+    extraction_max_image_edge_px: int = 1600
+    extraction_page_concurrency: int = 4
 
     class Config:
         env_file = ".env"

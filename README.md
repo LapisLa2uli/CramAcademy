@@ -27,9 +27,10 @@ CramAcademy/
 
 ## Features
 
-- **Dynamic Test Generation** — filter by subject, course level (S / S+ / H / H+), grade (6–12), difficulty, question pool (personal only, community only, or mixed), and count. When using **mixed** pools, the backend deduplicates by question ID so the same question never appears twice.
+- **Dynamic Test Generation** — filter by subject, course level (S / S+ / H / H+), grade (6–12), question pool (personal only, community only, or mixed), and count. When using **mixed** pools, the backend deduplicates by question ID so the same question never appears twice.
 - **Images** — optional question figure and per-choice images for MCQs (Supabase Storage)
 - **PDF / multi-image import** — upload a multi-page **PDF** or select **multiple images** (each file is one “page”). Draw color-coded regions for the question stem and (for MCQs) choices A–D; crops upload as PNGs. Region colors distinguish stem vs. A/B/C/D without on-canvas text labels. Uses the pdf.js worker from `unpkg.com` for PDFs (needs network access in dev/build).
+- **AI document extraction** — Dashboard → Contribute → **AI extract**: server renders PDF pages (or uses uploaded images), runs a **vision** model with structured JSON, shows color-coded region overlays and consistency warnings, then commits approved sets to your personal bank via `POST /extraction/commit`. Requires the same **OpenAI-compatible** API as grading (`gpt-4o`-class). Set `EXTRACTION_ENABLED=false` to disable. Uses **`pypdfium2`** + **Pillow** on the backend.
 - **Question creation — LaTeX** — text fields that support `$...$` (stem, options, answers, captions, model answers) can show a **hover preview** of rendered math while you type.
 - **MCQ explanations** — optional **text** (LaTeX-capable) and/or **image** explanation per MCQ, shown on test results after grading. Older questions without an explanation are flagged in **My question bank**, **moderation queue**, and **community bank** with an orange “missing explanation” indicator (hover for tooltip).
 - **Bluebook-Style UI** — fullscreen, distraction-free testing with timer and question grid. **Previous** is hidden on the first question; **Next** is replaced by **Submit Test** on the last question (the top bar still offers Submit at any time).
@@ -67,6 +68,7 @@ CramAcademy/
    - **`database/migration_explanations.sql`** — MCQ **`explanation`** and **`explanation_image_url`** columns on `questions`
    - **`database/migration_username_avatar.sql`** — `username` (unique) and `avatar_url` on `profiles` (if not already in `schema.sql`)
    - **`database/migration_drop_display_name.sql`** — drops legacy **`display_name`** if you still have it (the app uses **username** only)
+   - **`database/migration_drop_difficulty.sql`** — removes **`difficulty`** from **`questions`** and **`tests`** (and enum **`difficulty_level`**) to match the current app
    If question submit fails with **PGRST204** / missing **`question_image_url`**, run **`database/patch_questions_app_columns.sql`** (idempotent). For existing DBs, apply only migrations you have not run yet; **`database/schema.sql`** is the full reference for a fresh Supabase project.
 3. Copy your project URL, anon key, and service role key
 4. After you create the first account (signup in the app), make an admin with: `UPDATE public.profiles SET role = 'admin' WHERE email = 'your@email.com';` Later admins can use the **Admin** page in the dashboard.
@@ -128,6 +130,10 @@ The app will be available at `http://localhost:3000`.
 | `OLLAMA_BASE_URL`            | `http://localhost:11434`                 |
 | `OLLAMA_MODEL`               | `llama3` (default)                       |
 | `CORS_ORIGINS`               | JSON array of allowed browser origins; include both `http://localhost:3000` and `http://127.0.0.1:3000` if you switch hosts. Missing origin causes **Failed to fetch** on API calls. |
+| `EXTRACTION_ENABLED`         | Optional. Default `true`. Set `false` to turn off **`/extraction/*`** (e.g. prod without vision keys). |
+| `EXTRACTION_MAX_PAGES`       | Optional. Cap pages per analyze job (default **24**). |
+| `EXTRACTION_MAX_IMAGE_EDGE_PX` | Optional. Longest edge for rendered page images before vision (default **1600**). |
+| `EXTRACTION_PAGE_CONCURRENCY` | Optional. Parallel vision calls per job (default **4**). |
 
 ### Frontend (`frontend/.env.local`)
 
@@ -178,6 +184,8 @@ The app will be available at `http://localhost:3000`.
 | POST   | `/protests`                       | File a grade appeal        |
 | GET    | `/protests/submission/{id}`       | Get protests for submission|
 | GET    | `/health`                         | Health check               |
+| POST   | `/extraction/analyze`             | Multipart `files[]` + optional `max_pages`, `dpi` — vision extraction draft (auth) |
+| POST   | `/extraction/commit`              | JSON body — create question sets + questions in personal bank (auth) |
 
 ---
 

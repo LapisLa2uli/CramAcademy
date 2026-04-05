@@ -115,7 +115,6 @@ async def rejection_reasons_public():
 @router.get("", response_model=list[QuestionResponse])
 async def list_community_questions(
     subject: Optional[str] = None,
-    difficulty: Optional[str] = None,
     course_level: Optional[str] = None,
     grade_level: Optional[int] = None,
     type: Optional[str] = None,
@@ -131,8 +130,6 @@ async def list_community_questions(
 
     if subject:
         query = query.eq("subject", subject)
-    if difficulty:
-        query = query.eq("difficulty", difficulty)
     if course_level:
         query = query.eq("course_level", course_level)
     if grade_level is not None:

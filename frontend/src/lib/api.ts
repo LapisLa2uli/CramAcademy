@@ -11,6 +11,8 @@ import {
   ProfileMe,
   ContributionsCalendar,
   AdminUserRow,
+  ExtractionAnalyzeResponse,
+  ExtractionCommitBody,
 } from "@/types";
 import { supabase } from "./supabase";
 
@@ -95,6 +97,43 @@ async function apiFetch<T>(
   return res.json();
 }
 
+async function apiFetchMultipart<T>(
+  path: string,
+  formData: FormData
+): Promise<T> {
+  const token = await getToken();
+  let res: Response;
+  try {
+    res = await fetch(requestUrl(path), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg === "Failed to fetch" || e instanceof TypeError) {
+      throw new Error(`${msg}. ${networkErrorHint()}`);
+    }
+    throw e;
+  }
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: res.statusText }));
+    const detail = error.detail;
+    const msg =
+      typeof detail === "string"
+        ? detail
+        : detail != null
+          ? JSON.stringify(detail)
+          : res.statusText;
+    throw new Error(msg || "API request failed");
+  }
+
+  return res.json();
+}
+
 export const api = {
   auth: {
     me() {
@@ -126,7 +165,6 @@ export const api = {
   questions: {
     list(params?: {
       subject?: string;
-      difficulty?: string;
       course_level?: string;
       grade_level?: number;
       type?: string;
@@ -255,6 +293,27 @@ export const api = {
       return apiFetch<{ status: string }>(`/question-sets/${setId}`, {
         method: "DELETE",
       });
+    },
+  },
+
+  extraction: {
+    analyze(files: File[], opts?: { max_pages?: number; dpi?: number }) {
+      const fd = new FormData();
+      for (const f of files) {
+        fd.append("files", f);
+      }
+      if (opts?.max_pages != null) fd.append("max_pages", String(opts.max_pages));
+      if (opts?.dpi != null) fd.append("dpi", String(opts.dpi));
+      return apiFetchMultipart<ExtractionAnalyzeResponse>("/extraction/analyze", fd);
+    },
+    commit(body: ExtractionCommitBody) {
+      return apiFetch<{ created_set_ids: string[]; question_counts: number[] }>(
+        "/extraction/commit",
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+        }
+      );
     },
   },
 

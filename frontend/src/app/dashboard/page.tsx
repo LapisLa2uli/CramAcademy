@@ -27,10 +27,14 @@ const PdfQuestionSetFromPdfPanel = dynamic(
   { ssr: false, loading: () => <p className="text-gray-500 text-sm">Loading PDF tools…</p> }
 );
 
+const AiExtractionWizard = dynamic(
+  () => import("@/components/extraction/AiExtractionWizard"),
+  { ssr: false, loading: () => <p className="text-gray-500 text-sm">Loading AI extraction…</p> }
+);
+
 interface RecentTest {
   id: string;
   subject?: string;
-  difficulty?: string;
   created_at: string;
   finished_at?: string;
 }
@@ -41,7 +45,9 @@ export default function DashboardPage() {
   const [generating, setGenerating] = useState(false);
   const [recentTests, setRecentTests] = useState<RecentTest[]>([]);
   const [tab, setTab] = useState<"test" | "contribute">("test");
-  const [contributeMode, setContributeMode] = useState<"standard" | "pdf" | "question-set" | "pdf-question-set">("standard");
+  const [contributeMode, setContributeMode] = useState<
+    "standard" | "pdf" | "question-set" | "pdf-question-set" | "ai-extract"
+  >("standard");
 
   const handleGenerate = async (config: TestConfig) => {
     setGenerating(true);
@@ -140,6 +146,7 @@ export default function DashboardPage() {
                 { key: "question-set", label: "Question Set" },
                 { key: "pdf", label: "From PDF / Images" },
                 { key: "pdf-question-set", label: "Set from PDF" },
+                { key: "ai-extract", label: "AI extract" },
               ] as const).map((item) => (
                 <button
                   key={item.key}
@@ -161,8 +168,10 @@ export default function DashboardPage() {
               <PdfQuestionFromPdfPanel userId={user.id} />
             ) : contributeMode === "question-set" ? (
               <QuestionSetForm />
-            ) : (
+            ) : contributeMode === "pdf-question-set" ? (
               <PdfQuestionSetFromPdfPanel userId={user.id} />
+            ) : (
+              <AiExtractionWizard />
             )}
           </div>
         )}
@@ -202,7 +211,6 @@ function QuestionSubmitForm() {
   const [type, setType] = useState<"mcq" | "frq">("mcq");
   const [subjectId, setSubjectId] = useState("");
   const [subjectName, setSubjectName] = useState("");
-  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [courseLevel, setCourseLevel] = useState("");
   const [gradeLevel, setGradeLevel] = useState<number | "">("");
   const [content, setContent] = useState("");
@@ -323,7 +331,6 @@ function QuestionSubmitForm() {
         type,
         subject: subjectName,
         ...(subjectId ? { subject_id: subjectId } : {}),
-        difficulty,
         ...(courseLevel ? { course_level: courseLevel } : {}),
         ...(gradeLevel !== "" ? { grade_level: Number(gradeLevel) } : {}),
         content: content.trim(),
@@ -387,18 +394,6 @@ function QuestionSubmitForm() {
           level={courseLevel}
           onLevelChange={setCourseLevel}
         />
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Difficulty</label>
-          <select
-            value={difficulty}
-            onChange={(e) => setDifficulty(e.target.value as "easy" | "medium" | "hard")}
-            className="input-field"
-          >
-            <option value="easy">Easy</option>
-            <option value="medium">Medium</option>
-            <option value="hard">Hard</option>
-          </select>
-        </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Grade <span className="text-gray-400">(optional)</span>

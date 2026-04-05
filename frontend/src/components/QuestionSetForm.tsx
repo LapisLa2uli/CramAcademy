@@ -72,7 +72,6 @@ export default function QuestionSetForm() {
   // Shared metadata
   const [subjectId, setSubjectId] = useState("");
   const [subjectName, setSubjectName] = useState("");
-  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [courseLevel, setCourseLevel] = useState("");
   const [gradeLevel, setGradeLevel] = useState<number | "">("");
   const [tags, setTags] = useState("");
@@ -243,7 +242,6 @@ export default function QuestionSetForm() {
           type: q.type,
           subject: subjectName,
           subject_id: subjectId,
-          difficulty,
           ...(courseLevel ? { course_level: courseLevel } : {}),
           ...(gradeLevel !== "" ? { grade_level: Number(gradeLevel) } : {}),
           content: q.content.trim(),
@@ -330,18 +328,6 @@ export default function QuestionSetForm() {
           allowAny={false}
         />
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Difficulty</label>
-            <select
-              value={difficulty}
-              onChange={(e) => setDifficulty(e.target.value as "easy" | "medium" | "hard")}
-              className="input-field"
-            >
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
-            </select>
-          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Grade <span className="text-gray-400">(opt.)</span>

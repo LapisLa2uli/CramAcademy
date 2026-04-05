@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import type { Difficulty, TestConfig, QuestionSource, QuestionTypeFilter } from "@/types";
+import type { TestConfig, QuestionSource, QuestionTypeFilter } from "@/types";
 import SubjectPicker from "./SubjectPicker";
 
 interface TestConfigFormProps {
@@ -12,7 +12,6 @@ interface TestConfigFormProps {
 export default function TestConfigForm({ onSubmit, loading }: TestConfigFormProps) {
   const [subjectId, setSubjectId] = useState("");
   const [subjectName, setSubjectName] = useState("");
-  const [difficulty, setDifficulty] = useState<Difficulty | "">("");
   const [courseLevel, setCourseLevel] = useState("");
   const [gradeLevel, setGradeLevel] = useState<number | "">("");
   const [numQuestions, setNumQuestions] = useState(10);
@@ -30,7 +29,6 @@ export default function TestConfigForm({ onSubmit, loading }: TestConfigFormProp
     }
     onSubmit({
       subject: subjectName,
-      difficulty: difficulty || undefined,
       course_level: courseLevel || undefined,
       grade_level: gradeLevel === "" ? undefined : Number(gradeLevel),
       num_questions: numQuestions,
@@ -69,22 +67,6 @@ export default function TestConfigForm({ onSubmit, loading }: TestConfigFormProp
               Grade {g}
             </option>
           ))}
-        </select>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Difficulty <span className="text-gray-400">(optional)</span>
-        </label>
-        <select
-          value={difficulty}
-          onChange={(e) => setDifficulty(e.target.value as Difficulty | "")}
-          className="input-field"
-        >
-          <option value="">Any</option>
-          <option value="easy">Easy</option>
-          <option value="medium">Medium</option>
-          <option value="hard">Hard</option>
         </select>
       </div>
 

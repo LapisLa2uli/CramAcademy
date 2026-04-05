@@ -95,8 +95,6 @@ async def add_question_to_set(
 
     if "type" in data and hasattr(data["type"], "value"):
         data["type"] = data["type"].value
-    if "difficulty" in data and hasattr(data["difficulty"], "value"):
-        data["difficulty"] = data["difficulty"].value
 
     result = admin.table("questions").insert(data).execute()
     return result.data[0]

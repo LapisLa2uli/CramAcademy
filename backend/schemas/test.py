@@ -1,11 +1,10 @@
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
-from schemas.question import DifficultyLevel, CourseLevel
+from schemas.question import CourseLevel
 
 
 class TestGenerateRequest(BaseModel):
     subject: str
-    difficulty: Optional[DifficultyLevel] = None
     course_level: Optional[CourseLevel] = None
     grade_level: Optional[int] = Field(None, ge=1, le=12)
     num_questions: int = 10
@@ -24,7 +23,6 @@ class TestResponse(BaseModel):
     id: str
     user_id: str
     subject: Optional[str]
-    difficulty: Optional[str]
     course_level: Optional[str] = None
     grade_level: Optional[int] = None
     time_limit_seconds: int

@@ -57,13 +57,11 @@ CREATE TRIGGER on_auth_user_created
 -- Questions
 -- ============================================================
 CREATE TYPE question_type AS ENUM ('mcq', 'frq');
-CREATE TYPE difficulty_level AS ENUM ('easy', 'medium', 'hard');
 
 CREATE TABLE public.questions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     type question_type NOT NULL,
     subject TEXT NOT NULL,
-    difficulty difficulty_level NOT NULL DEFAULT 'medium',
     course_level TEXT,            -- e.g. S, S+, H, H+ (track / level)
     grade_level SMALLINT CHECK (grade_level IS NULL OR (grade_level >= 1 AND grade_level <= 12)),
     content TEXT NOT NULL DEFAULT '',
@@ -133,7 +131,6 @@ CREATE POLICY "Staff delete questions"
     );
 
 CREATE INDEX idx_questions_subject ON public.questions(subject);
-CREATE INDEX idx_questions_difficulty ON public.questions(difficulty);
 CREATE INDEX idx_questions_type ON public.questions(type);
 CREATE INDEX idx_questions_course_level ON public.questions(course_level);
 CREATE INDEX idx_questions_grade_level ON public.questions(grade_level);
@@ -168,7 +165,6 @@ CREATE TABLE public.tests (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     subject TEXT,
-    difficulty difficulty_level,
     course_level TEXT,
     grade_level SMALLINT,
     time_limit_seconds INT NOT NULL DEFAULT 3600,

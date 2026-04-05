@@ -57,7 +57,6 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
 
   const [subjectId, setSubjectId] = useState("");
   const [subjectName, setSubjectName] = useState("");
-  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [courseLevel, setCourseLevel] = useState("");
   const [gradeLevel, setGradeLevel] = useState<number | "">("");
   const [tags, setTags] = useState("");
@@ -292,7 +291,6 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
           type: item.type,
           subject: subjectName,
           subject_id: subjectId,
-          difficulty,
           ...(courseLevel ? { course_level: courseLevel } : {}),
           ...(gradeLevel !== "" ? { grade_level: Number(gradeLevel) } : {}),
           content: item.content || (pdf ? "(From PDF)" : "(From image)"),
@@ -487,15 +485,6 @@ export default function PdfQuestionFromPdfPanel({ userId }: Props) {
             onLevelChange={setCourseLevel}
             allowAny={false}
           />
-          <select
-            value={difficulty}
-            onChange={(e) => setDifficulty(e.target.value as "easy" | "medium" | "hard")}
-            className="input-field"
-          >
-            <option value="easy">Easy</option>
-            <option value="medium">Medium</option>
-            <option value="hard">Hard</option>
-          </select>
           <select
             value={gradeLevel}
             onChange={(e) =>

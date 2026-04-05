@@ -178,7 +178,6 @@ export default function ModerationQueuePage() {
                 <div className="flex flex-wrap gap-2 text-xs text-gray-500 mb-1">
                   <span>{q.subject}</span>
                   <span>{q.type}</span>
-                  <span>{q.difficulty}</span>
                   {!q.subject_id && (
                     <span
                       title="Missing subject — assign via Edit"

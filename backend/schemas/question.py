@@ -8,12 +8,6 @@ class QuestionType(str, Enum):
     frq = "frq"
 
 
-class DifficultyLevel(str, Enum):
-    easy = "easy"
-    medium = "medium"
-    hard = "hard"
-
-
 # Legacy alias — levels are now dynamic per-subject, so accept any string.
 CourseLevel = str
 
@@ -36,7 +30,6 @@ class QuestionCreate(BaseModel):
     type: QuestionType
     subject: str = ""
     subject_id: Optional[str] = None
-    difficulty: DifficultyLevel = DifficultyLevel.medium
     course_level: Optional[CourseLevel] = None
     grade_level: Optional[int] = Field(None, ge=1, le=12)
     content: str = ""
@@ -65,7 +58,6 @@ class QuestionResponse(BaseModel):
     type: QuestionType
     subject: str = ""
     subject_id: Optional[str] = None
-    difficulty: DifficultyLevel
     course_level: Optional[str] = None
     grade_level: Optional[int] = None
     content: str
@@ -95,7 +87,6 @@ class QuestionUpdate(BaseModel):
     type: Optional[QuestionType] = None
     subject: Optional[str] = None
     subject_id: Optional[str] = None
-    difficulty: Optional[DifficultyLevel] = None
     course_level: Optional[CourseLevel] = None
     grade_level: Optional[int] = Field(None, ge=1, le=12)
     content: Optional[str] = None
@@ -140,6 +131,5 @@ class QuestionSetDetailResponse(QuestionSetResponse):
 
 class QuestionFilter(BaseModel):
     subject: Optional[str] = None
-    difficulty: Optional[DifficultyLevel] = None
     type: Optional[QuestionType] = None
     limit: int = 50

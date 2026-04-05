@@ -18,7 +18,6 @@ async def generate_test(
     questions = await generate_test_questions(
         user_id=user_id,
         subject=req.subject,
-        difficulty=req.difficulty.value if req.difficulty else None,
         num_questions=req.num_questions,
         course_level=req.course_level,
         grade_level=req.grade_level,
@@ -37,7 +36,6 @@ async def generate_test(
     test_result = admin.table("tests").insert({
         "user_id": user_id,
         "subject": req.subject,
-        "difficulty": req.difficulty.value if req.difficulty else None,
         "course_level": req.course_level,
         "grade_level": req.grade_level,
         "time_limit_seconds": req.time_limit_seconds,

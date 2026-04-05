@@ -1,5 +1,4 @@
 export type QuestionType = "mcq" | "frq";
-export type Difficulty = "easy" | "medium" | "hard";
 export type CourseLevel = "S" | "S+" | "H" | "H+";
 export type ProtestStatus = "pending" | "accepted" | "rejected";
 export type UserRole = "user" | "moderator" | "admin";
@@ -25,7 +24,6 @@ export interface Question {
   type: QuestionType;
   subject: string;
   subject_id?: string | null;
-  difficulty: Difficulty;
   course_level?: string | null;
   grade_level?: number | null;
   content: string;
@@ -107,7 +105,6 @@ export interface Test {
   id: string;
   user_id: string;
   subject?: string;
-  difficulty?: Difficulty;
   course_level?: string | null;
   grade_level?: number | null;
   time_limit_seconds: number;
@@ -152,11 +149,94 @@ export type QuestionTypeFilter = "mixed" | "mcq" | "frq";
 
 export interface TestConfig {
   subject: string;
-  difficulty?: Difficulty;
   course_level?: string;
   grade_level?: number;
   num_questions: number;
   time_limit_seconds: number;
   question_source?: QuestionSource;
   question_type?: QuestionTypeFilter;
+}
+
+/** Normalized box on a page image (top-left origin, 0–1). */
+export interface ExtractionNormRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export type ExtractionRegionRole =
+  | "context"
+  | "shared_stem"
+  | "question_stem"
+  | "choice"
+  | "answer_key"
+  | "explanation"
+  | "frq_prompt"
+  | "other";
+
+export interface ExtractionRegion {
+  id: string;
+  page_index: number;
+  role: ExtractionRegionRole;
+  label: string;
+  bbox: ExtractionNormRect;
+  text?: string | null;
+  set_index: number;
+  question_index?: number | null;
+  choice_label?: string | null;
+  applies_to_question_numbers?: number[] | null;
+  confidence?: number | null;
+}
+
+export interface ExtractionPage {
+  page_index: number;
+  width_px: number;
+  height_px: number;
+  image_base64: string;
+  regions: ExtractionRegion[];
+}
+
+export interface ExtractionQuestionDraft {
+  question_index: number;
+  type: QuestionType;
+  content: string;
+  options?: { label: string; text: string }[];
+  answer: string;
+  explanation?: string | null;
+  rubric?: Record<string, unknown> | null;
+}
+
+export interface ExtractionSetDraft {
+  set_index: number;
+  context_text: string;
+  shared_stems: { applies_to_question_numbers: number[]; text: string }[];
+  questions: ExtractionQuestionDraft[];
+}
+
+export interface ExtractionAnalyzeResponse {
+  warnings: string[];
+  pages: ExtractionPage[];
+  sets: ExtractionSetDraft[];
+}
+
+export interface ExtractionCommitBody {
+  subject: string;
+  subject_id?: string | null;
+  course_level?: string | null;
+  grade_level?: number | null;
+  tags?: string[];
+  sets: {
+    context_text: string;
+    context_image_url?: string | null;
+    questions: {
+      type: QuestionType;
+      content: string;
+      options?: { label: string; text: string }[];
+      answer: string;
+      explanation?: string | null;
+      rubric?: Record<string, unknown> | null;
+      latex_enabled?: boolean;
+    }[];
+  }[];
 }

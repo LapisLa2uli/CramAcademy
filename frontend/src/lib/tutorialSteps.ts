@@ -15,7 +15,7 @@ const dashboardSteps: TutorialStep[] = [
   },
   {
     selector: '[data-tutorial="test-config"]',
-    content: "On the 'Take a Test' tab, configure your test: choose a subject, difficulty, number of questions, and time limit, then click Generate.",
+    content: "On the 'Take a Test' tab, configure your test: choose a subject, number of questions, and time limit, then click Generate.",
     position: "right",
   },
   {

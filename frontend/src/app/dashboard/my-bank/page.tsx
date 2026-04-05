@@ -206,7 +206,6 @@ export default function MyBankPage() {
                         {questions.length} question{questions.length !== 1 ? "s" : ""}
                       </span>
                       {firstQ.subject && <span className="text-gray-500">{firstQ.subject}</span>}
-                      <span className="text-gray-500">{firstQ.difficulty}</span>
                       {hasAnyMissingSubject && (
                         <span className="text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
                           ⚠ missing subject

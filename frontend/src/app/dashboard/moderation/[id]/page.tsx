@@ -6,7 +6,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import SubjectPicker from "@/components/SubjectPicker";
-import type { Difficulty, Question, QuestionType } from "@/types";
+import type { Question, QuestionType } from "@/types";
 
 export default function ModerationEditPage() {
   const params = useParams<{ id: string }>();
@@ -20,7 +20,6 @@ export default function ModerationEditPage() {
   const [courseLevel, setCourseLevel] = useState("");
   const [content, setContent] = useState("");
   const [answer, setAnswer] = useState("");
-  const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [type, setType] = useState<QuestionType>("mcq");
   const [explanation, setExplanation] = useState("");
   const [loading, setLoading] = useState(true);
@@ -37,7 +36,6 @@ export default function ModerationEditPage() {
       setCourseLevel(data.course_level || "");
       setContent(data.content);
       setAnswer(data.answer || "");
-      setDifficulty(data.difficulty);
       setType(data.type);
       setExplanation(data.explanation || "");
     } catch (e) {
@@ -63,7 +61,6 @@ export default function ModerationEditPage() {
         course_level: courseLevel || undefined,
         content,
         answer,
-        difficulty,
         type,
         explanation: explanation.trim() || undefined,
       });
@@ -126,30 +123,16 @@ export default function ModerationEditPage() {
             Old subject value: &ldquo;{q.subject}&rdquo; — please re-assign using the dropdown above.
           </p>
         )}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as QuestionType)}
-              className="input-field"
-            >
-              <option value="mcq">MCQ</option>
-              <option value="frq">FRQ</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Difficulty</label>
-            <select
-              value={difficulty}
-              onChange={(e) => setDifficulty(e.target.value as Difficulty)}
-              className="input-field"
-            >
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
-            </select>
-          </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value as QuestionType)}
+            className="input-field max-w-xs"
+          >
+            <option value="mcq">MCQ</option>
+            <option value="frq">FRQ</option>
+          </select>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Content</label>
