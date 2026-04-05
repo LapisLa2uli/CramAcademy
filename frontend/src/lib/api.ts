@@ -339,21 +339,45 @@ export const api = {
       if (opts?.max_pages != null) fd.append("max_pages", String(opts.max_pages));
       if (opts?.dpi != null) fd.append("dpi", String(opts.dpi));
 
-      let res: Response;
-      try {
-        res = await fetch(requestUrl("/extraction/analyze-stream"), {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: fd,
-        });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (msg === "Failed to fetch" || e instanceof TypeError) {
-          throw new Error(`${msg}. ${networkErrorHint()}`);
+      /** Cheap GET before large upload — reduces “Failed to fetch” when Render is asleep. */
+      if (isLikelyColdStartHost()) {
+        try {
+          await warmupBackendIfRemote();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          throw new Error(
+            `API did not respond to /health after several attempts (${msg}). ${networkErrorHint()}`
+          );
         }
-        throw e;
+      }
+
+      const streamAttempts = isLikelyColdStartHost() ? 3 : 2;
+      let res: Response | undefined;
+      for (let a = 0; a < streamAttempts; a++) {
+        if (a > 0) {
+          await sleep(2000 * a);
+        }
+        try {
+          res = await fetch(requestUrl("/extraction/analyze-stream"), {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: fd,
+          });
+          break;
+        } catch (e) {
+          if (!isNetworkFailure(e) || a === streamAttempts - 1) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (isNetworkFailure(e)) {
+              throw new Error(`${msg}. ${networkErrorHint()}`);
+            }
+            throw e;
+          }
+        }
+      }
+      if (!res) {
+        throw new Error(`Failed to start extraction. ${networkErrorHint()}`);
       }
 
       if (!res.ok) {
@@ -405,7 +429,17 @@ export const api = {
       };
 
       while (true) {
-        const { done, value } = await reader.read();
+        let chunk: ReadableStreamReadResult<Uint8Array>;
+        try {
+          chunk = await reader.read();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          const tail = isLikelyColdStartHost()
+            ? " Hosted APIs sometimes close long streams (idle sleep, or HTTP/proxy time limits)."
+            : "";
+          throw new Error(`Extraction stream interrupted: ${msg}.${tail}`);
+        }
+        const { done, value } = chunk;
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");

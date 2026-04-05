@@ -212,6 +212,8 @@ The app will be available at `http://localhost:3000`.
 5. Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 6. Add environment variables from `.env.example`
 
+**Render “Failed to fetch” / ~1 minute recovery:** On **free/starter** tiers, the web service **sleeps** after idle time. The first browser requests often fail with **Failed to fetch** until the dyno finishes cold-start (commonly **30–90 seconds**), which looks like “everything breaks, then it works again.” The frontend mitigates this when `NEXT_PUBLIC_API_URL` points at **onrender.com**: it **retries GETs** with backoff, **pings `/health`** before starting a long PDF extraction upload, and **retries** the extraction POST once or twice on network errors. For production traffic you can: use a **paid** instance that does not sleep, run an external **uptime monitor** hitting `GET /health` every few minutes to keep the service warm, or shorten very long extraction jobs if you hit **HTTP/proxy timeouts**.
+
 ### Database → Supabase
 
 Already hosted. Just keep your project active on the free tier.
