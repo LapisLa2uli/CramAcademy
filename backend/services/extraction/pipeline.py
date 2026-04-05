@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any
+from typing import Any, AsyncIterator
 
 from config import get_settings
 from schemas.extraction import ExtractionAnalyzeResponse
@@ -51,12 +51,13 @@ def _prepare_pages_from_uploads(
     return out2
 
 
-async def run_analyze(
+async def iter_analyze(
     files: list[tuple[str, bytes]],
     *,
     max_pages: int | None = None,
     dpi: int = 160,
-) -> ExtractionAnalyzeResponse:
+) -> AsyncIterator[dict[str, Any]]:
+    """Yield NDJSON-friendly events: ``progress`` then ``result``."""
     settings = get_settings()
     if not settings.extraction_enabled:
         raise RuntimeError("Extraction is disabled (EXTRACTION_ENABLED=false).")
@@ -69,32 +70,56 @@ async def run_analyze(
         files, max_pages=limit, max_edge=max_edge, dpi=dpi
     )
     if not pages:
-        return ExtractionAnalyzeResponse(warnings=["No pages to analyze."], pages=[], sets=[])
+        r = ExtractionAnalyzeResponse(warnings=["No pages to analyze."], pages=[], sets=[])
+        yield {"type": "result", "data": r.model_dump(mode="json")}
+        return
 
     if settings.ai_provider == "ollama":
         logger.warning("Extraction with Ollama may not support vision; prefer 302ai / OpenAI.")
+
+    total = len(pages)
+    yield {"type": "progress", "completed": 0, "total": total}
 
     sem = asyncio.Semaphore(max(1, settings.extraction_page_concurrency))
 
     async def one_page(idx: int, png: bytes, w: int, h: int) -> tuple[int, dict[str, Any], bytes, int, int]:
         async with sem:
             raw = await extract_page(idx, png)
-            return (idx, raw, png, w, h)
+        return (idx, raw, png, w, h)
 
-    results = await asyncio.gather(
-        *[one_page(i, png, w, h) for i, png, w, h in pages],
-        return_exceptions=True,
-    )
+    tasks = [
+        asyncio.create_task(one_page(i, png, w, h))
+        for i, png, w, h in pages
+    ]
 
     page_results: list[tuple[int, dict[str, Any], bytes, int, int]] = []
     warn: list[str] = []
-    for r in results:
-        if isinstance(r, BaseException):
-            warn.append(f"Page failed: {r}")
-            continue
-        page_results.append(r)
+    done = 0
+    for fut in asyncio.as_completed(tasks):
+        try:
+            page_results.append(await fut)
+        except BaseException as e:
+            warn.append(f"Page failed: {e}")
+        done += 1
+        yield {"type": "progress", "completed": done, "total": total}
 
     page_results.sort(key=lambda x: x[0])
     pages_out, sets_out = merge_page_results(page_results)
     warn.extend(collect_warnings(sets_out))
-    return ExtractionAnalyzeResponse(warnings=warn, pages=pages_out, sets=sets_out)
+    r = ExtractionAnalyzeResponse(warnings=warn, pages=pages_out, sets=sets_out)
+    yield {"type": "result", "data": r.model_dump(mode="json")}
+
+
+async def run_analyze(
+    files: list[tuple[str, bytes]],
+    *,
+    max_pages: int | None = None,
+    dpi: int = 160,
+) -> ExtractionAnalyzeResponse:
+    last: ExtractionAnalyzeResponse | None = None
+    async for ev in iter_analyze(files, max_pages=max_pages, dpi=dpi):
+        if ev.get("type") == "result":
+            last = ExtractionAnalyzeResponse.model_validate(ev["data"])
+    if last is None:
+        raise RuntimeError("Extraction produced no result.")
+    return last

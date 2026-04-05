@@ -185,6 +185,7 @@ The app will be available at `http://localhost:3000`.
 | GET    | `/protests/submission/{id}`       | Get protests for submission|
 | GET    | `/health`                         | Health check               |
 | POST   | `/extraction/analyze`             | Multipart `files[]` + optional `max_pages`, `dpi` — vision extraction draft (auth) |
+| POST   | `/extraction/analyze-stream`      | Same as analyze; response is **NDJSON** with `progress` events then final `result` (used for UI progress) |
 | POST   | `/extraction/commit`              | JSON body — create question sets + questions in personal bank (auth) |
 
 ---

@@ -1,4 +1,7 @@
+import json
+
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 
 from config import get_settings
 from database import get_supabase_admin
@@ -9,7 +12,7 @@ from schemas.extraction import (
 )
 from schemas.question import QuestionCreate, QuestionType
 from services.authz import get_bearer_user_id
-from services.extraction.pipeline import run_analyze
+from services.extraction.pipeline import iter_analyze, run_analyze
 from services.question_validation import validate_question
 
 router = APIRouter()
@@ -22,19 +25,7 @@ def _is_pdf(data: bytes) -> bool:
     return data.startswith(_PDF_SIG)
 
 
-@router.post("/analyze", response_model=ExtractionAnalyzeResponse)
-async def extraction_analyze(
-    authorization: str = Header(...),
-    files: list[UploadFile] = File(...),
-    max_pages: int = Form(20),
-    dpi: int = Form(160),
-):
-    settings = get_settings()
-    if not settings.extraction_enabled:
-        raise HTTPException(status_code=503, detail="Extraction is disabled.")
-
-    get_bearer_user_id(authorization)
-
+async def _load_extraction_files(files: list[UploadFile]) -> list[tuple[str, bytes]]:
     if not files:
         raise HTTPException(status_code=422, detail="No files uploaded.")
 
@@ -55,11 +46,56 @@ async def extraction_analyze(
             status_code=400,
             detail="Upload either a single PDF or one or more images — not both.",
         )
+    return chunks
+
+
+@router.post("/analyze", response_model=ExtractionAnalyzeResponse)
+async def extraction_analyze(
+    authorization: str = Header(...),
+    files: list[UploadFile] = File(...),
+    max_pages: int = Form(20),
+    dpi: int = Form(160),
+):
+    settings = get_settings()
+    if not settings.extraction_enabled:
+        raise HTTPException(status_code=503, detail="Extraction is disabled.")
+
+    get_bearer_user_id(authorization)
+    chunks = await _load_extraction_files(files)
 
     try:
         return await run_analyze(chunks, max_pages=max_pages, dpi=dpi)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
+
+
+@router.post("/analyze-stream")
+async def extraction_analyze_stream(
+    authorization: str = Header(...),
+    files: list[UploadFile] = File(...),
+    max_pages: int = Form(20),
+    dpi: int = Form(160),
+):
+    """NDJSON stream: ``progress`` lines then final ``result`` (same payload as ``/analyze``)."""
+    settings = get_settings()
+    if not settings.extraction_enabled:
+        raise HTTPException(status_code=503, detail="Extraction is disabled.")
+
+    get_bearer_user_id(authorization)
+    chunks = await _load_extraction_files(files)
+
+    async def ndjson_body():
+        try:
+            async for ev in iter_analyze(chunks, max_pages=max_pages, dpi=dpi):
+                yield (json.dumps(ev, ensure_ascii=False) + "\n").encode("utf-8")
+        except RuntimeError as e:
+            err = json.dumps({"type": "error", "detail": str(e)}, ensure_ascii=False) + "\n"
+            yield err.encode("utf-8")
+
+    return StreamingResponse(
+        ndjson_body(),
+        media_type="application/x-ndjson",
+    )
 
 
 @router.post("/commit", response_model=ExtractionCommitResponse)

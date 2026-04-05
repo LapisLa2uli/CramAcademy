@@ -43,6 +43,10 @@ export default function AiExtractionWizard() {
   const [courseLevel, setCourseLevel] = useState("");
   const [gradeLevel, setGradeLevel] = useState<number | "">("");
   const [tags, setTags] = useState("");
+  const [analyzeProgress, setAnalyzeProgress] = useState<{
+    completed: number;
+    total: number;
+  } | null>(null);
 
   const pages: ExtractionPage[] = data?.pages ?? [];
   const currentPage = pages[pageIdx] ?? null;
@@ -54,9 +58,16 @@ export default function AiExtractionWizard() {
     }
     setErr(null);
     setBusy(true);
+    setAnalyzeProgress(null);
     setStep("analyze");
     try {
-      const res = await api.extraction.analyze(files, { max_pages: 24, dpi: 160 });
+      const res = await api.extraction.analyze(files, {
+        max_pages: 24,
+        dpi: 160,
+        onProgress: (completed, total) => {
+          setAnalyzeProgress({ completed, total });
+        },
+      });
       setData(res);
       setEditableSets(structuredClone(res.sets));
       setPageIdx(0);
@@ -66,6 +77,7 @@ export default function AiExtractionWizard() {
       setStep("upload");
     } finally {
       setBusy(false);
+      setAnalyzeProgress(null);
     }
   };
 
@@ -195,7 +207,38 @@ export default function AiExtractionWizard() {
       )}
 
       {step === "analyze" && (
-        <div className="card p-8 text-gray-600">Analyzing pages in parallel…</div>
+        <div className="card p-8 space-y-4 max-w-lg">
+          <p className="text-gray-800 font-medium">Analyzing pages…</p>
+          <p className="text-sm text-gray-500">
+            Vision model runs in parallel (with a concurrency cap). Progress updates as each page finishes.
+          </p>
+          {analyzeProgress != null && analyzeProgress.total > 0 ? (
+            <>
+              <div
+                className="h-3 bg-gray-200 rounded-full overflow-hidden"
+                role="progressbar"
+                aria-valuenow={analyzeProgress.completed}
+                aria-valuemin={0}
+                aria-valuemax={analyzeProgress.total}
+                aria-label="Pages analyzed"
+              >
+                <div
+                  className="h-full bg-primary-600 transition-[width] duration-300 ease-out rounded-full"
+                  style={{
+                    width: `${Math.min(100, (analyzeProgress.completed / analyzeProgress.total) * 100)}%`,
+                  }}
+                />
+              </div>
+              <p className="text-sm text-gray-700 tabular-nums">
+                <span className="font-semibold text-gray-900">{analyzeProgress.completed}</span>
+                {" / "}
+                <span>{analyzeProgress.total}</span> pages analyzed
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-gray-500">Preparing pages…</p>
+          )}
+        </div>
       )}
 
       {step === "review" && data && (

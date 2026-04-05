@@ -28,8 +28,46 @@ const API_DIRECT =
     : null;
 const API_BASE = API_DIRECT ?? "/backend-api";
 
+/** Hosted APIs (e.g. Render free tier) often sleep; first requests fail until the instance wakes (~30–90s). */
+function isLikelyColdStartHost(): boolean {
+  if (!API_DIRECT) return false;
+  return /onrender\.com|render\.com/i.test(API_DIRECT);
+}
+
 function requestUrl(path: string): string {
   return `${API_BASE}${path}`;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isNetworkFailure(e: unknown): boolean {
+  if (e instanceof TypeError) return true;
+  const msg = e instanceof Error ? e.message : String(e);
+  return msg === "Failed to fetch" || msg.includes("Failed to fetch");
+}
+
+/**
+ * Wake a sleeping host (no auth). Skipped for same-origin proxy in dev.
+ */
+async function warmupBackendIfRemote(): Promise<void> {
+  if (!API_DIRECT) return;
+  if (!isLikelyColdStartHost()) return;
+  const url = requestUrl("/health");
+  const delays = [0, 2000, 5000, 10000];
+  let last: unknown;
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i] > 0) await sleep(delays[i]);
+    try {
+      const res = await fetch(url, { method: "GET" });
+      if (res.ok) return;
+      last = new Error(`Health check returned ${res.status}`);
+    } catch (e) {
+      last = e;
+    }
+  }
+  if (last) throw last;
 }
 
 async function getToken(): Promise<string> {
@@ -40,11 +78,17 @@ async function getToken(): Promise<string> {
 }
 
 function networkErrorHint(): string {
+  const renderNote = isLikelyColdStartHost()
+    ? " If the API is on Render, free/starter instances sleep after idle time: the first requests often fail until the " +
+      "service wakes (often 30–90s). Wait and retry, use a plan without sleep, or ping `/health` on an interval to keep it warm."
+    : "";
+
   if (API_DIRECT) {
     return (
-      `Could not reach the API at ${API_DIRECT}. Start FastAPI (uvicorn). ` +
+      `Could not reach the API at ${API_DIRECT}. Start FastAPI (uvicorn) or wait for the host to respond. ` +
       "If you use `localhost` here on Windows, try `http://127.0.0.1:8000` or remove NEXT_PUBLIC_API_URL " +
-      "from .env.local to use the built-in `/backend-api` proxy (see README)."
+      "from .env.local to use the built-in `/backend-api` proxy (see README)." +
+      renderNote
     );
   }
   return (
@@ -58,22 +102,38 @@ async function apiFetch<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const token = await getToken();
+  const method = (options.method ?? "GET").toUpperCase();
+  /** Retrying POST can duplicate side effects; only retry safe reads. */
+  const maxAttempts =
+    method === "GET" || method === "HEAD" ? (isLikelyColdStartHost() ? 4 : 2) : 1;
+
   let res: Response;
-  try {
-    res = await fetch(requestUrl(path), {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-        ...options.headers,
-      },
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (msg === "Failed to fetch" || e instanceof TypeError) {
-      throw new Error(`${msg}. ${networkErrorHint()}`);
+  let lastNet: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      await sleep(1200 * Math.pow(2, attempt - 1));
     }
-    throw e;
+    try {
+      res = await fetch(requestUrl(path), {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          ...options.headers,
+        },
+      });
+      lastNet = undefined;
+      break;
+    } catch (e) {
+      lastNet = e;
+      if (!isNetworkFailure(e) || attempt === maxAttempts - 1) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (isNetworkFailure(e)) {
+          throw new Error(`${msg}. ${networkErrorHint()}`);
+        }
+        throw e;
+      }
+    }
   }
 
   if (!res.ok) {
@@ -91,43 +151,6 @@ async function apiFetch<T>(
           : detail != null
             ? JSON.stringify(detail)
             : res.statusText;
-    throw new Error(msg || "API request failed");
-  }
-
-  return res.json();
-}
-
-async function apiFetchMultipart<T>(
-  path: string,
-  formData: FormData
-): Promise<T> {
-  const token = await getToken();
-  let res: Response;
-  try {
-    res = await fetch(requestUrl(path), {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (msg === "Failed to fetch" || e instanceof TypeError) {
-      throw new Error(`${msg}. ${networkErrorHint()}`);
-    }
-    throw e;
-  }
-
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: res.statusText }));
-    const detail = error.detail;
-    const msg =
-      typeof detail === "string"
-        ? detail
-        : detail != null
-          ? JSON.stringify(detail)
-          : res.statusText;
     throw new Error(msg || "API request failed");
   }
 
@@ -297,14 +320,108 @@ export const api = {
   },
 
   extraction: {
-    analyze(files: File[], opts?: { max_pages?: number; dpi?: number }) {
+    /**
+     * Streams NDJSON from ``/extraction/analyze-stream`` so the UI can show per-page progress.
+     */
+    async analyze(
+      files: File[],
+      opts?: {
+        max_pages?: number;
+        dpi?: number;
+        onProgress?: (completed: number, total: number) => void;
+      }
+    ): Promise<ExtractionAnalyzeResponse> {
+      const token = await getToken();
       const fd = new FormData();
       for (const f of files) {
         fd.append("files", f);
       }
       if (opts?.max_pages != null) fd.append("max_pages", String(opts.max_pages));
       if (opts?.dpi != null) fd.append("dpi", String(opts.dpi));
-      return apiFetchMultipart<ExtractionAnalyzeResponse>("/extraction/analyze", fd);
+
+      let res: Response;
+      try {
+        res = await fetch(requestUrl("/extraction/analyze-stream"), {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: fd,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg === "Failed to fetch" || e instanceof TypeError) {
+          throw new Error(`${msg}. ${networkErrorHint()}`);
+        }
+        throw e;
+      }
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ detail: res.statusText }));
+        const detail = error.detail;
+        const msg =
+          typeof detail === "string"
+            ? detail
+            : detail != null
+              ? JSON.stringify(detail)
+              : res.statusText;
+        throw new Error(msg || "API request failed");
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        throw new Error("No response body from extraction stream.");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let result: ExtractionAnalyzeResponse | null = null;
+
+      const flushLine = (line: string) => {
+        const t = line.trim();
+        if (!t) return;
+        const ev = JSON.parse(t) as {
+          type: string;
+          completed?: number;
+          total?: number;
+          data?: ExtractionAnalyzeResponse;
+          detail?: string;
+        };
+        if (ev.type === "error") {
+          throw new Error(ev.detail || "Extraction failed.");
+        }
+        if (ev.type === "progress") {
+          if (
+            opts?.onProgress &&
+            typeof ev.completed === "number" &&
+            typeof ev.total === "number"
+          ) {
+            opts.onProgress(ev.completed, ev.total);
+          }
+        }
+        if (ev.type === "result" && ev.data) {
+          result = ev.data as ExtractionAnalyzeResponse;
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          flushLine(line);
+        }
+      }
+      if (buffer.trim()) {
+        flushLine(buffer);
+      }
+
+      if (!result) {
+        throw new Error("Extraction finished without a result payload.");
+      }
+      return result;
     },
     commit(body: ExtractionCommitBody) {
       return apiFetch<{ created_set_ids: string[]; question_counts: number[] }>(
