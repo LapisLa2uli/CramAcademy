@@ -10,17 +10,84 @@ from schemas.extraction import (
 )
 
 
+def _coerce_int(v: Any, default: int) -> int:
+    """Like int(v) but treats None and invalid values as default (JSON null breaks dict.get defaults)."""
+    if v is None:
+        return default
+    if isinstance(v, bool):
+        return int(v)
+    if isinstance(v, (int, float)):
+        return int(v)
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return default
+        try:
+            return int(float(s))
+        except ValueError:
+            return default
+    return default
+
+
+def _coerce_optional_int(v: Any) -> int | None:
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return int(v)
+    if isinstance(v, (int, float)):
+        return int(v)
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return None
+        try:
+            return int(float(s))
+        except ValueError:
+            return None
+    return None
+
+
+def _coerce_int_list(nums: Any) -> list[int]:
+    if not isinstance(nums, list):
+        return []
+    out: list[int] = []
+    for x in nums:
+        if x is None:
+            continue
+        try:
+            out.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def _clamp01(v: float) -> float:
     return max(0.0, min(1.0, v))
+
+
+def _coerce_float(v: Any, default: float) -> float:
+    if v is None:
+        return default
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return default
+        try:
+            return float(s)
+        except ValueError:
+            return default
+    return default
 
 
 def _norm_bbox(raw: dict[str, Any] | None) -> NormRect:
     if not raw:
         return NormRect(x=0, y=0, w=0.5, h=0.1)
-    x = _clamp01(float(raw.get("x", 0)))
-    y = _clamp01(float(raw.get("y", 0)))
-    w = float(raw.get("w", 0.1))
-    h = float(raw.get("h", 0.1))
+    x = _clamp01(_coerce_float(raw.get("x"), 0.0))
+    y = _clamp01(_coerce_float(raw.get("y"), 0.0))
+    w = _coerce_float(raw.get("w"), 0.1)
+    h = _coerce_float(raw.get("h"), 0.1)
     w = max(0.01, min(1.0 - x, w))
     h = max(0.01, min(1.0 - y, h))
     return NormRect(x=x, y=y, w=w, h=h)
@@ -31,7 +98,7 @@ def _parse_regions(page_index: int, raw_regions: list[Any], set_id_map: dict[int
     for i, r in enumerate(raw_regions or []):
         if not isinstance(r, dict):
             continue
-        sid = int(r.get("set_index", 0))
+        sid = _coerce_int(r.get("set_index"), 0)
         gid = set_id_map.get(sid, sid)
         role = str(r.get("role", "other"))
         if role not in (
@@ -56,7 +123,7 @@ def _parse_regions(page_index: int, raw_regions: list[Any], set_id_map: dict[int
                 bbox=_norm_bbox(r.get("bbox")),
                 text=r.get("text") if isinstance(r.get("text"), str) else None,
                 set_index=gid,
-                question_index=int(qidx) if qidx is not None else None,
+                question_index=_coerce_optional_int(qidx),
                 choice_label=str(r["choice_label"]) if r.get("choice_label") not in (None, "null") else None,
                 applies_to_question_numbers=list(applies) if isinstance(applies, list) else None,
                 confidence=float(r["confidence"]) if r.get("confidence") is not None else None,
@@ -72,7 +139,7 @@ def _parse_set(raw: dict[str, Any], global_set_index: int) -> ExtractionSetDraft
             continue
         qs.append(
             ExtractionQuestionDraft(
-                question_index=int(q.get("question_index", len(qs) + 1)),
+                question_index=_coerce_int(q.get("question_index"), len(qs) + 1),
                 type="mcq" if q.get("type") == "mcq" else "frq",
                 content=str(q.get("content") or ""),
                 options=q.get("options") if isinstance(q.get("options"), list) else None,
@@ -88,7 +155,7 @@ def _parse_set(raw: dict[str, Any], global_set_index: int) -> ExtractionSetDraft
         nums = s.get("applies_to_question_numbers")
         stems.append(
             SharedStemDraft(
-                applies_to_question_numbers=[int(x) for x in nums] if isinstance(nums, list) else [],
+                applies_to_question_numbers=_coerce_int_list(nums),
                 text=str(s.get("text") or ""),
             )
         )
@@ -132,13 +199,13 @@ def merge_page_results(
         for s in sets_raw:
             if not isinstance(s, dict):
                 continue
-            local = int(s.get("set_index", 0))
+            local = _coerce_int(s.get("set_index"), 0)
             gid = ensure_local_set(local)
             all_sets[gid] = _parse_set(s, gid)
 
         for r in regions_raw:
             if isinstance(r, dict):
-                ensure_local_set(int(r.get("set_index", 0)))
+                ensure_local_set(_coerce_int(r.get("set_index"), 0))
 
         regions = _parse_regions(page_index, regions_raw, set_id_map)
 
