@@ -30,7 +30,7 @@ CramAcademy/
 - **Dynamic Test Generation** — filter by subject, course level (S / S+ / H / H+), grade (6–12), question pool (personal only, community only, or mixed), and count. When using **mixed** pools, the backend deduplicates by question ID so the same question never appears twice.
 - **Images** — optional question figure and per-choice images for MCQs (Supabase Storage)
 - **PDF / multi-image import** — upload a multi-page **PDF** or select **multiple images** (each file is one “page”). Draw color-coded regions for the question stem and (for MCQs) choices A–D; crops upload as PNGs. Region colors distinguish stem vs. A/B/C/D without on-canvas text labels. Uses the pdf.js worker from `unpkg.com` for PDFs (needs network access in dev/build).
-- **AI document extraction** — Dashboard → Contribute → **AI extract**: server renders PDF pages (or uses uploaded images), runs a **vision** model with structured JSON, shows color-coded region overlays and consistency warnings, then commits approved sets to your personal bank via `POST /extraction/commit`. Requires the same **OpenAI-compatible** API as grading (`gpt-4o`-class). Set `EXTRACTION_ENABLED=false` to disable. Uses **`pypdfium2`** + **Pillow** on the backend.
+- **AI document extraction** — Dashboard → Contribute → **AI extract**: server renders PDF pages (or uses uploaded images), runs a **vision** model with structured JSON, shows color-coded region overlays and consistency warnings, then commits approved sets to your personal bank via `POST /extraction/commit`. Requires the same **OpenAI-compatible** API as grading (default model **`gpt-5.4-mini-2026-03-17`** via 302). Set `EXTRACTION_ENABLED=false` to disable. Uses **`pypdfium2`** + **Pillow** on the backend.
 - **Question creation — LaTeX** — text fields that support `$...$` (stem, options, answers, captions, model answers) can show a **hover preview** of rendered math while you type.
 - **MCQ explanations** — optional **text** (LaTeX-capable) and/or **image** explanation per MCQ, shown on test results after grading. Older questions without an explanation are flagged in **My question bank**, **moderation queue**, and **community bank** with an orange “missing explanation” indicator (hover for tooltip).
 - **Bluebook-Style UI** — fullscreen, distraction-free testing with timer and question grid. **Previous** is hidden on the first question; **Next** is replaced by **Submit Test** on the last question (the top bar still offers Submit at any time).
@@ -126,7 +126,7 @@ The app will be available at `http://localhost:3000`.
 | `AI_PROVIDER`                | `302ai` (default) or `ollama`            |
 | `OPENAI_API_KEY`             | 302.ai API key                           |
 | `OPENAI_BASE_URL`            | `https://api.302.ai/v1`                  |
-| `OPENAI_MODEL`               | `gpt-4o` (default)                       |
+| `OPENAI_MODEL`               | `gpt-5.4-mini-2026-03-17` (default)     |
 | `OLLAMA_BASE_URL`            | `http://localhost:11434`                 |
 | `OLLAMA_MODEL`               | `llama3` (default)                       |
 | `CORS_ORIGINS`               | JSON array of allowed browser origins; include both `http://localhost:3000` and `http://127.0.0.1:3000` if you switch hosts. Missing origin causes **Failed to fetch** on API calls. |

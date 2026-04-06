@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # 302.ai (OpenAI-compatible)
     openai_api_key: str = ""
     openai_base_url: str = "https://api.302.ai/v1"
-    openai_model: str = "gpt-4o"
+    openai_model: str = "gpt-5.4-mini-2026-03-17"
 
     # Ollama fallback
     ollama_base_url: str = "http://localhost:11434"
