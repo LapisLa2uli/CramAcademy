@@ -117,9 +117,24 @@ async def extraction_analyze_stream(
                 high_accuracy=ha,
                 two_stage=ts,
             ):
-                yield (json.dumps(ev, ensure_ascii=False) + "\n").encode("utf-8")
+                try:
+                    line = json.dumps(ev, ensure_ascii=False) + "\n"
+                except (TypeError, ValueError) as e:
+                    err = json.dumps(
+                        {"type": "error", "detail": f"Failed to serialize result: {e}"},
+                        ensure_ascii=False,
+                    ) + "\n"
+                    yield err.encode("utf-8")
+                    return
+                yield line.encode("utf-8")
         except RuntimeError as e:
             err = json.dumps({"type": "error", "detail": str(e)}, ensure_ascii=False) + "\n"
+            yield err.encode("utf-8")
+        except Exception as e:
+            err = json.dumps(
+                {"type": "error", "detail": f"Extraction stream failed: {e}"},
+                ensure_ascii=False,
+            ) + "\n"
             yield err.encode("utf-8")
 
     return StreamingResponse(

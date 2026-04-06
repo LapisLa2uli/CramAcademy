@@ -127,18 +127,25 @@ async def iter_analyze(
 
     page_results.sort(key=lambda x: x[0])
 
+    # Keep the HTTP stream alive through merge / LLM / huge json.dumps — proxies often
+    # close “idle” connections if no bytes are sent for tens of seconds.
+    yield {"type": "status", "phase": "merge"}
+
     pages_out, sets_out = merge_page_results(page_results)
     warn.extend(collect_warnings(sets_out))
 
     if settings.extraction_cross_page_warnings and len(page_results) >= 2:
+        yield {"type": "status", "phase": "cross_page"}
         summaries = build_page_summaries(page_results)
         try:
             warn.extend(await cross_page_warning_pass(summaries))
         except Exception as e:
             logger.warning("cross_page_warning_pass skipped: %s", e)
 
+    yield {"type": "status", "phase": "encode"}
     r = ExtractionAnalyzeResponse(warnings=warn, pages=pages_out, sets=sets_out)
-    yield {"type": "result", "data": r.model_dump(mode="json")}
+    payload = r.model_dump(mode="json")
+    yield {"type": "result", "data": payload}
 
 
 async def run_analyze(

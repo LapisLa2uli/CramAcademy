@@ -62,9 +62,39 @@ export function extractionTimeoutMs(files: File[], maxPages: number): number {
       : Math.min(files.length, maxPages);
   const base = 90_000;
   const perPage = 55_000;
-  const perMb = 4_000;
+  const perMb = 12_000;
   const cap = 50 * 60 * 1000;
   return Math.min(cap, Math.max(150_000, base + nPages * perPage + mb * perMb));
+}
+
+/**
+ * While reading the NDJSON body: extend the deadline on each chunk (merge / huge `result` JSON
+ * can leave the stream quiet for a long time; proxies may drop idle connections — server sends
+ * `status` heartbeats too). Does not run during upload (use a separate timeout on `fetch`).
+ */
+function createStreamReadAbort(deadlineAt: number, idleMs: number) {
+  const ctrl = new AbortController();
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearIdle = () => {
+    if (idleTimer !== undefined) {
+      clearTimeout(idleTimer);
+      idleTimer = undefined;
+    }
+  };
+  const bump = () => {
+    clearIdle();
+    idleTimer = setTimeout(() => ctrl.abort(), idleMs);
+  };
+  bump();
+  const totalTimer = setTimeout(
+    () => ctrl.abort(),
+    Math.max(30_000, deadlineAt - performance.now())
+  );
+  const dispose = () => {
+    clearIdle();
+    clearTimeout(totalTimer);
+  };
+  return { signal: ctrl.signal, bump, dispose };
 }
 
 function isLikelyTimeoutAbort(e: unknown): boolean {
@@ -399,7 +429,9 @@ export const api = {
       }
 
       const streamAttempts = isLikelyColdStartHost() ? 3 : 2;
+      const maxTotalMs = extractionTimeoutMs(files, maxPages);
       let res: Response | undefined;
+      let streamStartedAt = performance.now();
       for (let a = 0; a < streamAttempts; a++) {
         if (a > 0) {
           await sleep(2000 * a);
@@ -410,7 +442,8 @@ export const api = {
           high_accuracy: opts?.high_accuracy,
           two_stage: opts?.two_stage,
         });
-        const signal = AbortSignal.timeout(extractionTimeoutMs(files, maxPages));
+        streamStartedAt = performance.now();
+        const fetchSignal = AbortSignal.timeout(maxTotalMs);
         try {
           res = await fetch(requestUrl("/extraction/analyze-stream"), {
             method: "POST",
@@ -418,7 +451,7 @@ export const api = {
               Authorization: `Bearer ${token}`,
             },
             body: fd,
-            signal,
+            signal: fetchSignal,
           });
           break;
         } catch (e) {
@@ -457,24 +490,45 @@ export const api = {
         throw new Error("No response body from extraction stream.");
       }
 
+      const readDeadline = streamStartedAt + maxTotalMs;
+      const readCtrl = createStreamReadAbort(readDeadline, 15 * 60 * 1000);
+      const onReadAbort = () => {
+        reader.cancel().catch(() => {});
+      };
+      readCtrl.signal.addEventListener("abort", onReadAbort);
+
       const decoder = new TextDecoder();
       let buffer = "";
       let result: ExtractionAnalyzeResponse | null = null;
+      let sawProgress = false;
+      let lastTotal = 0;
 
       const flushLine = (line: string) => {
         const t = line.trim();
         if (!t) return;
-        const ev = JSON.parse(t) as {
+        let ev: {
           type: string;
           completed?: number;
           total?: number;
           data?: ExtractionAnalyzeResponse;
           detail?: string;
         };
+        try {
+          ev = JSON.parse(t) as typeof ev;
+        } catch {
+          throw new Error(
+            "Malformed extraction stream (JSON parse error). The response was likely truncated — try fewer pages, lower max pages, or set NEXT_PUBLIC_API_URL to your API host."
+          );
+        }
         if (ev.type === "error") {
           throw new Error(ev.detail || "Extraction failed.");
         }
+        if (ev.type === "status") {
+          return;
+        }
         if (ev.type === "progress") {
+          sawProgress = true;
+          if (typeof ev.total === "number") lastTotal = ev.total;
           if (
             opts?.onProgress &&
             typeof ev.completed === "number" &&
@@ -488,37 +542,47 @@ export const api = {
         }
       };
 
-      while (true) {
-        let chunk: ReadableStreamReadResult<Uint8Array>;
-        try {
-          chunk = await reader.read();
-        } catch (e) {
-          if (isLikelyTimeoutAbort(e)) {
-            throw new Error(
-              "Extraction timed out while reading the stream. For large PDFs use High accuracy (higher DPI) only if needed, reduce max pages, or host the API with longer proxy timeouts."
-            );
+      try {
+        while (true) {
+          let chunk: ReadableStreamReadResult<Uint8Array>;
+          try {
+            chunk = await reader.read();
+          } catch (e) {
+            if (isLikelyTimeoutAbort(e)) {
+              throw new Error(
+                "Extraction timed out while reading the stream. For large PDFs use High accuracy (higher DPI) only if needed, reduce max pages, or host the API with longer proxy timeouts."
+              );
+            }
+            const msg = e instanceof Error ? e.message : String(e);
+            const tail = isLikelyColdStartHost()
+              ? " Hosted APIs sometimes close long streams (idle sleep, or HTTP/proxy time limits)."
+              : "";
+            throw new Error(`Extraction stream interrupted: ${msg}.${tail}`);
           }
-          const msg = e instanceof Error ? e.message : String(e);
-          const tail = isLikelyColdStartHost()
-            ? " Hosted APIs sometimes close long streams (idle sleep, or HTTP/proxy time limits)."
-            : "";
-          throw new Error(`Extraction stream interrupted: ${msg}.${tail}`);
+          const { done, value } = chunk;
+          if (done) break;
+          readCtrl.bump();
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            flushLine(line);
+          }
         }
-        const { done, value } = chunk;
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          flushLine(line);
+        if (buffer.trim()) {
+          flushLine(buffer);
         }
-      }
-      if (buffer.trim()) {
-        flushLine(buffer);
+      } finally {
+        readCtrl.signal.removeEventListener("abort", onReadAbort);
+        readCtrl.dispose();
       }
 
       if (!result) {
-        throw new Error("Extraction finished without a result payload.");
+        const hint =
+          sawProgress && lastTotal > 0
+            ? ` The server processed ${lastTotal} page(s) but the final payload never arrived (often a proxy or size limit). Try NEXT_PUBLIC_API_URL pointing at the API, fewer pages, or lower render quality.`
+            : " Try again with a smaller file, fewer pages, or direct API URL (see README).";
+        throw new Error(`Extraction finished without a result payload.${hint}`);
       }
       return result;
     },
