@@ -132,7 +132,8 @@ The app will be available at `http://localhost:3000`.
 | `CORS_ORIGINS`               | JSON array of allowed browser origins; include both `http://localhost:3000` and `http://127.0.0.1:3000` if you switch hosts. Missing origin causes **Failed to fetch** on API calls. |
 | `EXTRACTION_ENABLED`         | Optional. Default `true`. Set `false` to turn off **`/extraction/*`** (e.g. prod without vision keys). |
 | `EXTRACTION_MAX_PAGES`       | Optional. Cap pages per analyze job (default **24**). |
-| `EXTRACTION_MAX_IMAGE_EDGE_PX` | Optional. Longest edge for rendered page images before vision (default **2048**). |
+| `EXTRACTION_MAX_IMAGE_EDGE_PX` | Optional. Longest edge for rendered page images before vision (default **1920**). |
+| `EXTRACTION_STREAM_PAGE_IMAGE_MAX_EDGE_PX` | Optional. Max longest edge for each **`page_image`** line on **`/extraction/analyze-stream`** (default **1280**). The final **`result`** line omits large base64 blobs so proxies can deliver it; set **0** to stream full vision resolution per page (still one NDJSON line per page). |
 | `EXTRACTION_HIGH_ACCURACY_MAX_EDGE_PX` | Optional. When the client sends **high accuracy**, the edge cap is at least this value (default **2560**). |
 | `EXTRACTION_DEFAULT_DPI`     | Optional. PDF render DPI when the client does not send `dpi` (default **160**). |
 | `EXTRACTION_MODEL`           | Optional. Vision model for extraction; falls back to **`OPENAI_MODEL`**. |
@@ -194,7 +195,7 @@ The app will be available at `http://localhost:3000`.
 | GET    | `/protests/submission/{id}`       | Get protests for submission|
 | GET    | `/health`                         | Health check               |
 | POST   | `/extraction/analyze`             | Multipart `files[]` + optional `max_pages`, `dpi`, `high_accuracy`, `two_stage` — vision extraction draft (auth) |
-| POST   | `/extraction/analyze-stream`      | Same as analyze; response is **NDJSON** with `progress` events then final `result` (used for UI progress). Stream headers disable caching/nginx buffering where possible. |
+| POST   | `/extraction/analyze-stream`      | Same as analyze; response is **NDJSON** with `progress`, then one **`page_image`** line per page (base64 + dimensions), then a compact **`result`** (regions/sets/warnings; page images empty until the client merges `page_image` lines). Stream headers disable caching/nginx buffering where possible. |
 | POST   | `/extraction/reanalyze-page`      | Multipart single page image (`file`) + optional `dpi`, `high_accuracy`, `two_stage` — re-run vision on one page (auth) |
 | POST   | `/extraction/commit`              | JSON body — create question sets + questions in personal bank (auth) |
 
@@ -224,7 +225,7 @@ The app will be available at `http://localhost:3000`.
 
 **Render “Failed to fetch” / ~1 minute recovery:** On **free/starter** tiers, the web service **sleeps** after idle time. The first browser requests often fail with **Failed to fetch** until the dyno finishes cold-start (commonly **30–90 seconds**), which looks like “everything breaks, then it works again.” The frontend mitigates this when `NEXT_PUBLIC_API_URL` points at **onrender.com**: it **retries GETs** with backoff, **pings `/health`** before starting a long PDF extraction upload, and **retries** the extraction POST once or twice on network errors. For production traffic you can: use a **paid** instance that does not sleep, run an external **uptime monitor** hitting `GET /health` every few minutes to keep the service warm, or shorten very long extraction jobs if you hit **HTTP/proxy timeouts**.
 
-**Extraction timeouts:** The browser uses an **AbortSignal** budget that scales with **page count** and upload size (see `extractionTimeoutMs` in `frontend/src/lib/api.ts`). **Vercel** serverless functions have a **max duration** per plan; very large PDFs may need the API on a **long-timeout host** (e.g. Render web service) and/or **`NEXT_PUBLIC_API_URL`** so the stream is not cut off by an edge limit. Match **nginx** `proxy_read_timeout` (or your host’s equivalent) to your longest expected job.
+**Extraction timeouts:** The browser uses an **AbortSignal** budget that scales with **page count** and upload size (see `extractionTimeoutMs` in `frontend/src/lib/api.ts`). **Vercel** serverless functions have a **max duration** per plan; very large PDFs may need the API on a **long-timeout host** (e.g. Render web service) and/or **`NEXT_PUBLIC_API_URL`** so the stream is not cut off by an edge limit. Match **nginx** `proxy_read_timeout` (or your host’s equivalent) to your longest expected job. Large jobs stream **`page_image`** lines (downscaled by **`EXTRACTION_STREAM_PAGE_IMAGE_MAX_EDGE_PX`**) so the final **`result`** line stays small enough for proxies and `JSON.parse`.
 
 **Extraction regression smoke:** From `backend`, run `python scripts/extraction_golden_smoke.py` (imports only) or `python scripts/extraction_golden_smoke.py path/to/fixture.pdf` (live API; requires keys).
 

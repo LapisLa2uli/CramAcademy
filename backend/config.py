@@ -30,8 +30,12 @@ class Settings(BaseSettings):
 
     extraction_enabled: bool = True
     extraction_max_pages: int = 24
-    extraction_max_image_edge_px: int = 2048
+    extraction_max_image_edge_px: int = 1920
     extraction_high_accuracy_max_edge_px: int = 2560
+    # Downscale each page image on the analyze-stream wire (separate NDJSON lines).
+    # Keeps each line small; normalized region boxes still match the streamed image.
+    # Set to 0 to send full vision resolution per page (still split across N lines).
+    extraction_stream_page_image_max_edge_px: int = 1280
     extraction_default_dpi: int = 160
     extraction_page_concurrency: int = 4
     # Vision model (falls back to openai_model)

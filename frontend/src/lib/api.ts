@@ -500,6 +500,10 @@ export const api = {
       const decoder = new TextDecoder();
       let buffer = "";
       let result: ExtractionAnalyzeResponse | null = null;
+      const pageImages = new Map<
+        number,
+        { image_base64: string; width_px: number; height_px: number }
+      >();
       let sawProgress = false;
       let lastTotal = 0;
 
@@ -510,7 +514,7 @@ export const api = {
           type: string;
           completed?: number;
           total?: number;
-          data?: ExtractionAnalyzeResponse;
+          data?: ExtractionAnalyzeResponse | Record<string, unknown>;
           detail?: string;
         };
         try {
@@ -524,6 +528,27 @@ export const api = {
           throw new Error(ev.detail || "Extraction failed.");
         }
         if (ev.type === "status") {
+          return;
+        }
+        if (ev.type === "page_image" && ev.data && typeof ev.data === "object") {
+          const d = ev.data as Record<string, unknown>;
+          const idx = d.page_index;
+          const b64 = d.image_base64;
+          const w = d.width_px;
+          const h = d.height_px;
+          if (
+            typeof idx === "number" &&
+            typeof b64 === "string" &&
+            typeof w === "number" &&
+            typeof h === "number"
+          ) {
+            pageImages.set(idx, {
+              image_base64: b64,
+              width_px: Math.round(w),
+              height_px: Math.round(h),
+            });
+          }
+          readCtrl.bump();
           return;
         }
         if (ev.type === "progress") {
@@ -584,7 +609,24 @@ export const api = {
             : " Try again with a smaller file, fewer pages, or direct API URL (see README).";
         throw new Error(`Extraction finished without a result payload.${hint}`);
       }
-      return result;
+      const extractionResult: ExtractionAnalyzeResponse = result;
+      if (pageImages.size > 0) {
+        return {
+          warnings: extractionResult.warnings,
+          sets: extractionResult.sets,
+          pages: extractionResult.pages.map((p) => {
+            const img = pageImages.get(p.page_index);
+            if (!img) return p;
+            return {
+              ...p,
+              image_base64: img.image_base64,
+              width_px: img.width_px,
+              height_px: img.height_px,
+            };
+          }),
+        };
+      }
+      return extractionResult;
     },
 
     async reanalyzePage(

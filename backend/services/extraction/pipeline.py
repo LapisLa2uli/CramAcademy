@@ -1,9 +1,10 @@
 import asyncio
+import base64
 import logging
 from typing import Any, AsyncIterator
 
 from config import get_settings
-from schemas.extraction import ExtractionAnalyzeResponse
+from schemas.extraction import ExtractionAnalyzeResponse, ExtractionPage
 from services.extraction.consistency import collect_warnings
 from services.extraction.cross_page import build_page_summaries, cross_page_warning_pass
 from services.extraction.normalize import merge_page_results
@@ -59,7 +60,7 @@ async def iter_analyze(
     high_accuracy: bool = False,
     two_stage: bool = False,
 ) -> AsyncIterator[dict[str, Any]]:
-    """Yield NDJSON-friendly events: ``progress`` then ``result``."""
+    """Yield NDJSON-friendly events: ``progress``, optional ``page_image`` chunks, then ``result``."""
     settings = get_settings()
     if not settings.extraction_enabled:
         raise RuntimeError("Extraction is disabled (EXTRACTION_ENABLED=false).")
@@ -143,8 +144,39 @@ async def iter_analyze(
             logger.warning("cross_page_warning_pass skipped: %s", e)
 
     yield {"type": "status", "phase": "encode"}
-    r = ExtractionAnalyzeResponse(warnings=warn, pages=pages_out, sets=sets_out)
+    stream_edge = settings.extraction_stream_page_image_max_edge_px
+    light_pages: list[ExtractionPage] = []
+    for (_, _, png_bytes, ow, oh), page in zip(page_results, pages_out, strict=True):
+        if stream_edge > 0:
+            spng, sw, sh = resize_png_max_edge(png_bytes, stream_edge)
+        else:
+            spng, sw, sh = png_bytes, ow, oh
+        b64 = base64.standard_b64encode(spng).decode("ascii")
+        line_payload = {
+            "page_index": page.page_index,
+            "width_px": sw,
+            "height_px": sh,
+            "image_base64": b64,
+        }
+        yield {"type": "page_image", "data": line_payload}
+        light_pages.append(
+            page.model_copy(
+                update={
+                    "width_px": sw,
+                    "height_px": sh,
+                    "image_base64": "",
+                }
+            )
+        )
+
+    r = ExtractionAnalyzeResponse(warnings=warn, pages=light_pages, sets=sets_out)
     payload = r.model_dump(mode="json")
+    logger.info(
+        "extraction stream: emitted %s page_image line(s) (stream max edge=%s); "
+        "final result carries regions/sets only (empty page images)",
+        len(light_pages),
+        stream_edge if stream_edge > 0 else "full",
+    )
     yield {"type": "result", "data": payload}
 
 
@@ -157,6 +189,7 @@ async def run_analyze(
     two_stage: bool = False,
 ) -> ExtractionAnalyzeResponse:
     last: ExtractionAnalyzeResponse | None = None
+    page_images: dict[int, dict[str, Any]] = {}
     async for ev in iter_analyze(
         files,
         max_pages=max_pages,
@@ -164,8 +197,33 @@ async def run_analyze(
         high_accuracy=high_accuracy,
         two_stage=two_stage,
     ):
-        if ev.get("type") == "result":
+        if ev.get("type") == "page_image":
+            d = ev.get("data")
+            if isinstance(d, dict):
+                idx = d.get("page_index")
+                if isinstance(idx, int):
+                    page_images[idx] = d
+        elif ev.get("type") == "result":
             last = ExtractionAnalyzeResponse.model_validate(ev["data"])
     if last is None:
         raise RuntimeError("Extraction produced no result.")
-    return last
+    if not page_images:
+        return last
+    merged_pages: list[ExtractionPage] = []
+    for p in last.pages:
+        d = page_images.get(p.page_index)
+        if not d:
+            merged_pages.append(p)
+            continue
+        b64 = d.get("image_base64")
+        wp, hp = d.get("width_px"), d.get("height_px")
+        merged_pages.append(
+            p.model_copy(
+                update={
+                    "image_base64": b64 if isinstance(b64, str) else "",
+                    "width_px": int(wp) if isinstance(wp, (int, float)) else p.width_px,
+                    "height_px": int(hp) if isinstance(hp, (int, float)) else p.height_px,
+                }
+            )
+        )
+    return last.model_copy(update={"pages": merged_pages})
