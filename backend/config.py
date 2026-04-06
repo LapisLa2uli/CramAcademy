@@ -35,7 +35,13 @@ class Settings(BaseSettings):
     # Downscale each page image on the analyze-stream wire (separate NDJSON lines).
     # Keeps each line small; normalized region boxes still match the streamed image.
     # Set to 0 to send full vision resolution per page (still split across N lines).
-    extraction_stream_page_image_max_edge_px: int = 1280
+    extraction_stream_page_image_max_edge_px: int = 1024
+    extraction_stream_page_use_jpeg: bool = True
+    extraction_stream_page_jpeg_quality: int = 82
+    # Max base64 characters per NDJSON line (page_image_part / result_b64_part).
+    extraction_stream_b64_chunk_chars: int = 65536
+    # Above this JSON character count, send result as result_b64_* chunks.
+    extraction_stream_result_json_char_threshold: int = 180_000
     extraction_default_dpi: int = 160
     extraction_page_concurrency: int = 4
     # Vision model (falls back to openai_model)

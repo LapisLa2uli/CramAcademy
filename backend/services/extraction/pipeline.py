@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import json
 import logging
 from typing import Any, AsyncIterator
 
@@ -13,6 +14,7 @@ from services.extraction.pdf_text_hint import extract_pdf_page_texts
 from services.extraction.render_pdf import (
     image_file_to_png_bytes,
     pdf_bytes_to_png_pages,
+    prepare_extraction_stream_image,
     resize_png_max_edge,
 )
 
@@ -23,6 +25,18 @@ _PDF_SIG = b"%PDF"
 
 def _is_pdf(data: bytes) -> bool:
     return data.startswith(_PDF_SIG)
+
+
+def _finalize_page_image_wire_record(meta: dict[str, Any], b64: str) -> dict[str, Any]:
+    """Normalize a completed page_image (chunked or single) for run_analyze merge."""
+    fmt = meta.get("format", "png")
+    return {
+        "page_index": int(meta["page_index"]),
+        "width_px": meta["width_px"],
+        "height_px": meta["height_px"],
+        "image_base64": b64,
+        "format": fmt,
+    }
 
 
 def _prepare_pages_from_uploads(
@@ -60,7 +74,7 @@ async def iter_analyze(
     high_accuracy: bool = False,
     two_stage: bool = False,
 ) -> AsyncIterator[dict[str, Any]]:
-    """Yield NDJSON-friendly events: ``progress``, optional ``page_image`` chunks, then ``result``."""
+    """Yield NDJSON: ``progress``, ``page_image`` (or begin/part/end), ``result`` or ``result_b64_*``."""
     settings = get_settings()
     if not settings.extraction_enabled:
         raise RuntimeError("Extraction is disabled (EXTRACTION_ENABLED=false).")
@@ -145,20 +159,45 @@ async def iter_analyze(
 
     yield {"type": "status", "phase": "encode"}
     stream_edge = settings.extraction_stream_page_image_max_edge_px
+    chunk_lim = max(4096, settings.extraction_stream_b64_chunk_chars)
     light_pages: list[ExtractionPage] = []
-    for (_, _, png_bytes, ow, oh), page in zip(page_results, pages_out, strict=True):
-        if stream_edge > 0:
-            spng, sw, sh = resize_png_max_edge(png_bytes, stream_edge)
-        else:
-            spng, sw, sh = png_bytes, ow, oh
-        b64 = base64.standard_b64encode(spng).decode("ascii")
-        line_payload = {
+    page_image_line_count = 0
+    for (_, _, png_bytes, _ow, _oh), page in zip(page_results, pages_out, strict=True):
+        edge = stream_edge if stream_edge > 0 else 0
+        enc, mime, sw, sh = prepare_extraction_stream_image(
+            png_bytes,
+            max_edge=edge,
+            use_jpeg=settings.extraction_stream_page_use_jpeg,
+            jpeg_quality=settings.extraction_stream_page_jpeg_quality,
+        )
+        fmt = "jpeg" if mime == "image/jpeg" else "png"
+        b64 = base64.standard_b64encode(enc).decode("ascii")
+        base_fields: dict[str, Any] = {
             "page_index": page.page_index,
             "width_px": sw,
             "height_px": sh,
-            "image_base64": b64,
+            "format": fmt,
         }
-        yield {"type": "page_image", "data": line_payload}
+        if len(b64) <= chunk_lim:
+            yield {"type": "page_image", "data": {**base_fields, "image_base64": b64}}
+            page_image_line_count += 1
+        else:
+            n = (len(b64) + chunk_lim - 1) // chunk_lim
+            yield {"type": "page_image_begin", "data": {**base_fields, "parts": n}}
+            page_image_line_count += 1
+            for pi, start in enumerate(range(0, len(b64), chunk_lim)):
+                yield {
+                    "type": "page_image_part",
+                    "data": {
+                        "page_index": page.page_index,
+                        "part": pi,
+                        "b64": b64[start : start + chunk_lim],
+                    },
+                }
+                page_image_line_count += 1
+            yield {"type": "page_image_end", "data": {"page_index": page.page_index}}
+            page_image_line_count += 1
+
         light_pages.append(
             page.model_copy(
                 update={
@@ -171,13 +210,32 @@ async def iter_analyze(
 
     r = ExtractionAnalyzeResponse(warnings=warn, pages=light_pages, sets=sets_out)
     payload = r.model_dump(mode="json")
-    logger.info(
-        "extraction stream: emitted %s page_image line(s) (stream max edge=%s); "
-        "final result carries regions/sets only (empty page images)",
-        len(light_pages),
-        stream_edge if stream_edge > 0 else "full",
-    )
-    yield {"type": "result", "data": payload}
+    json_str = json.dumps(payload, ensure_ascii=False)
+    th = settings.extraction_stream_result_json_char_threshold
+    if len(json_str) <= th:
+        logger.info(
+            "extraction stream: %s page_image-related line(s), max edge=%s, jpeg=%s; "
+            "single result JSON (%s chars)",
+            page_image_line_count,
+            stream_edge if stream_edge > 0 else "full",
+            settings.extraction_stream_page_use_jpeg,
+            len(json_str),
+        )
+        yield {"type": "result", "data": payload}
+    else:
+        out_b64 = base64.standard_b64encode(json_str.encode("utf-8")).decode("ascii")
+        nchunks = (len(out_b64) + chunk_lim - 1) // chunk_lim
+        logger.info(
+            "extraction stream: %s page_image-related line(s); sharded result JSON "
+            "(%s chars -> %s base64 chunks)",
+            page_image_line_count,
+            len(json_str),
+            nchunks,
+        )
+        yield {"type": "result_b64_begin", "parts": nchunks}
+        for i in range(0, len(out_b64), chunk_lim):
+            yield {"type": "result_b64_part", "data": out_b64[i : i + chunk_lim]}
+        yield {"type": "result_b64_end"}
 
 
 async def run_analyze(
@@ -190,6 +248,10 @@ async def run_analyze(
 ) -> ExtractionAnalyzeResponse:
     last: ExtractionAnalyzeResponse | None = None
     page_images: dict[int, dict[str, Any]] = {}
+    pim_meta: dict[int, dict[str, Any]] = {}
+    pim_parts: dict[int, dict[int, str]] = {}
+    result_b64_fragments: list[str] = []
+
     async for ev in iter_analyze(
         files,
         max_pages=max_pages,
@@ -197,13 +259,60 @@ async def run_analyze(
         high_accuracy=high_accuracy,
         two_stage=two_stage,
     ):
-        if ev.get("type") == "page_image":
+        t = ev.get("type")
+        if t == "page_image_begin":
             d = ev.get("data")
-            if isinstance(d, dict):
-                idx = d.get("page_index")
-                if isinstance(idx, int):
-                    page_images[idx] = d
-        elif ev.get("type") == "result":
+            if isinstance(d, dict) and isinstance(d.get("page_index"), int):
+                idx = int(d["page_index"])
+                pim_meta[idx] = {
+                    "page_index": idx,
+                    "width_px": d["width_px"],
+                    "height_px": d["height_px"],
+                    "format": d.get("format", "png"),
+                }
+                pim_parts[idx] = {}
+        elif t == "page_image_part":
+            d = ev.get("data")
+            if isinstance(d, dict) and isinstance(d.get("page_index"), int):
+                idx = int(d["page_index"])
+                part = d.get("part")
+                b64p = d.get("b64")
+                if isinstance(part, int) and isinstance(b64p, str):
+                    pim_parts.setdefault(idx, {})[part] = b64p
+        elif t == "page_image_end":
+            d = ev.get("data")
+            if isinstance(d, dict) and isinstance(d.get("page_index"), int):
+                idx = int(d["page_index"])
+                meta = pim_meta.pop(idx, {})
+                parts_map = pim_parts.pop(idx, {})
+                b64 = "".join(parts_map[i] for i in sorted(parts_map))
+                if meta:
+                    page_images[idx] = _finalize_page_image_wire_record(meta, b64)
+        elif t == "page_image":
+            d = ev.get("data")
+            if isinstance(d, dict) and isinstance(d.get("page_index"), int):
+                idx = int(d["page_index"])
+                b64 = d.get("image_base64")
+                if isinstance(b64, str):
+                    page_images[idx] = _finalize_page_image_wire_record(
+                        {
+                            "page_index": idx,
+                            "width_px": d["width_px"],
+                            "height_px": d["height_px"],
+                            "format": d.get("format", "png"),
+                        },
+                        b64,
+                    )
+        elif t == "result_b64_begin":
+            result_b64_fragments.clear()
+        elif t == "result_b64_part":
+            frag = ev.get("data")
+            if isinstance(frag, str):
+                result_b64_fragments.append(frag)
+        elif t == "result_b64_end":
+            blob = base64.standard_b64decode("".join(result_b64_fragments))
+            last = ExtractionAnalyzeResponse.model_validate_json(blob.decode("utf-8"))
+        elif t == "result":
             last = ExtractionAnalyzeResponse.model_validate(ev["data"])
     if last is None:
         raise RuntimeError("Extraction produced no result.")
@@ -216,11 +325,16 @@ async def run_analyze(
             merged_pages.append(p)
             continue
         b64 = d.get("image_base64")
+        if not isinstance(b64, str):
+            b64 = ""
+        fmt = d.get("format", "png")
+        if fmt == "jpeg" and b64 and not b64.startswith("data:"):
+            b64 = f"data:image/jpeg;base64,{b64}"
         wp, hp = d.get("width_px"), d.get("height_px")
         merged_pages.append(
             p.model_copy(
                 update={
-                    "image_base64": b64 if isinstance(b64, str) else "",
+                    "image_base64": b64,
                     "width_px": int(wp) if isinstance(wp, (int, float)) else p.width_px,
                     "height_px": int(hp) if isinstance(hp, (int, float)) else p.height_px,
                 }

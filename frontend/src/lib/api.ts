@@ -504,6 +504,16 @@ export const api = {
         number,
         { image_base64: string; width_px: number; height_px: number }
       >();
+      const pageImageAssembly = new Map<
+        number,
+        {
+          width_px: number;
+          height_px: number;
+          format: string;
+          parts: Map<number, string>;
+        }
+      >();
+      let resultB64Parts: string[] = [];
       let sawProgress = false;
       let lastTotal = 0;
 
@@ -514,7 +524,8 @@ export const api = {
           type: string;
           completed?: number;
           total?: number;
-          data?: ExtractionAnalyzeResponse | Record<string, unknown>;
+          parts?: number;
+          data?: ExtractionAnalyzeResponse | string | Record<string, unknown>;
           detail?: string;
         };
         try {
@@ -530,23 +541,124 @@ export const api = {
         if (ev.type === "status") {
           return;
         }
+        if (ev.type === "page_image_begin" && ev.data && typeof ev.data === "object") {
+          const d = ev.data as Record<string, unknown>;
+          const idx = d.page_index;
+          const w = d.width_px;
+          const h = d.height_px;
+          const fmt = typeof d.format === "string" ? d.format : "png";
+          if (
+            typeof idx === "number" &&
+            typeof w === "number" &&
+            typeof h === "number"
+          ) {
+            pageImageAssembly.set(idx, {
+              width_px: Math.round(w),
+              height_px: Math.round(h),
+              format: fmt,
+              parts: new Map(),
+            });
+          }
+          readCtrl.bump();
+          return;
+        }
+        if (ev.type === "page_image_part" && ev.data && typeof ev.data === "object") {
+          const d = ev.data as Record<string, unknown>;
+          const idx = d.page_index;
+          const part = d.part;
+          const b64p = d.b64;
+          if (
+            typeof idx === "number" &&
+            typeof part === "number" &&
+            typeof b64p === "string"
+          ) {
+            const asm = pageImageAssembly.get(idx);
+            if (asm) asm.parts.set(part, b64p);
+          }
+          readCtrl.bump();
+          return;
+        }
+        if (ev.type === "page_image_end" && ev.data && typeof ev.data === "object") {
+          const d = ev.data as Record<string, unknown>;
+          const idx = d.page_index;
+          if (typeof idx === "number") {
+            const asm = pageImageAssembly.get(idx);
+            pageImageAssembly.delete(idx);
+            if (asm) {
+              const ordered = [...asm.parts.keys()]
+                .sort((a, b) => a - b)
+                .map((k) => asm.parts.get(k) ?? "");
+              const raw = ordered.join("");
+              const isJpeg = asm.format === "jpeg";
+              const image_base64 =
+                isJpeg && raw && !raw.startsWith("data:")
+                  ? `data:image/jpeg;base64,${raw}`
+                  : raw;
+              pageImages.set(idx, {
+                image_base64,
+                width_px: asm.width_px,
+                height_px: asm.height_px,
+              });
+            }
+          }
+          readCtrl.bump();
+          return;
+        }
         if (ev.type === "page_image" && ev.data && typeof ev.data === "object") {
           const d = ev.data as Record<string, unknown>;
           const idx = d.page_index;
           const b64 = d.image_base64;
           const w = d.width_px;
           const h = d.height_px;
+          const fmt = typeof d.format === "string" ? d.format : "png";
           if (
             typeof idx === "number" &&
             typeof b64 === "string" &&
             typeof w === "number" &&
             typeof h === "number"
           ) {
+            const isJpeg = fmt === "jpeg";
+            const image_base64 =
+              isJpeg && b64 && !b64.startsWith("data:")
+                ? `data:image/jpeg;base64,${b64}`
+                : b64;
             pageImages.set(idx, {
-              image_base64: b64,
+              image_base64,
               width_px: Math.round(w),
               height_px: Math.round(h),
             });
+          }
+          readCtrl.bump();
+          return;
+        }
+        if (ev.type === "result_b64_begin") {
+          resultB64Parts = [];
+          readCtrl.bump();
+          return;
+        }
+        if (ev.type === "result_b64_part") {
+          const frag = ev.data;
+          if (typeof frag === "string") {
+            resultB64Parts.push(frag);
+          }
+          readCtrl.bump();
+          return;
+        }
+        if (ev.type === "result_b64_end") {
+          const joined = resultB64Parts.join("");
+          resultB64Parts = [];
+          try {
+            const binary = atob(joined);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+              bytes[i] = binary.charCodeAt(i);
+            }
+            const text = new TextDecoder().decode(bytes);
+            result = JSON.parse(text) as ExtractionAnalyzeResponse;
+          } catch {
+            throw new Error(
+              "Malformed extraction stream (failed to decode sharded result). Try fewer pages or contact support."
+            );
           }
           readCtrl.bump();
           return;
@@ -600,6 +712,12 @@ export const api = {
       } finally {
         readCtrl.signal.removeEventListener("abort", onReadAbort);
         readCtrl.dispose();
+      }
+
+      if (pageImageAssembly.size > 0) {
+        throw new Error(
+          "Extraction stream ended before all page image chunks arrived. Try again or reduce page count."
+        );
       }
 
       if (!result) {

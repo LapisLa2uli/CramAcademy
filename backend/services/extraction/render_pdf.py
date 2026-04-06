@@ -57,3 +57,33 @@ def resize_png_max_edge(png_bytes: bytes, max_edge: int) -> tuple[bytes, int, in
     buf = io.BytesIO()
     im.save(buf, format="PNG", optimize=True)
     return buf.getvalue(), nw, nh
+
+
+def prepare_extraction_stream_image(
+    png_bytes: bytes,
+    *,
+    max_edge: int,
+    use_jpeg: bool,
+    jpeg_quality: int,
+) -> tuple[bytes, str, int, int]:
+    """
+    Resize (if needed) and encode for the extraction NDJSON stream.
+    Returns (encoded_bytes, mime_type, width, height).
+    """
+    im = Image.open(io.BytesIO(png_bytes))
+    w, h = im.size
+    longest = max(w, h)
+    if max_edge > 0 and longest > max_edge:
+        scale = max_edge / longest
+        nw = max(1, int(w * scale))
+        nh = max(1, int(h * scale))
+        im = im.resize((nw, nh), Image.Resampling.LANCZOS)
+        w, h = nw, nh
+    if im.mode not in ("RGB", "L"):
+        im = im.convert("RGB")
+    buf = io.BytesIO()
+    if use_jpeg:
+        im.save(buf, format="JPEG", quality=jpeg_quality, optimize=True)
+        return buf.getvalue(), "image/jpeg", w, h
+    im.save(buf, format="PNG", optimize=True)
+    return buf.getvalue(), "image/png", w, h
