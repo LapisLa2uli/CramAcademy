@@ -132,7 +132,16 @@ The app will be available at `http://localhost:3000`.
 | `CORS_ORIGINS`               | JSON array of allowed browser origins; include both `http://localhost:3000` and `http://127.0.0.1:3000` if you switch hosts. Missing origin causes **Failed to fetch** on API calls. |
 | `EXTRACTION_ENABLED`         | Optional. Default `true`. Set `false` to turn off **`/extraction/*`** (e.g. prod without vision keys). |
 | `EXTRACTION_MAX_PAGES`       | Optional. Cap pages per analyze job (default **24**). |
-| `EXTRACTION_MAX_IMAGE_EDGE_PX` | Optional. Longest edge for rendered page images before vision (default **1600**). |
+| `EXTRACTION_MAX_IMAGE_EDGE_PX` | Optional. Longest edge for rendered page images before vision (default **2048**). |
+| `EXTRACTION_HIGH_ACCURACY_MAX_EDGE_PX` | Optional. When the client sends **high accuracy**, the edge cap is at least this value (default **2560**). |
+| `EXTRACTION_DEFAULT_DPI`     | Optional. PDF render DPI when the client does not send `dpi` (default **160**). |
+| `EXTRACTION_MODEL`           | Optional. Vision model for extraction; falls back to **`OPENAI_MODEL`**. |
+| `EXTRACTION_IMAGE_DETAIL`    | Optional. `low` / `high` / `auto` for vision `image_url.detail` when supported (default **high**). |
+| `EXTRACTION_OPENAI_READ_TIMEOUT_SECONDS` | Optional. **httpx** read timeout per upstream chat completion (default **180**). |
+| `EXTRACTION_USE_JSON_SCHEMA` | Optional. Use strict **json_schema** `response_format` when the provider supports it (default **true**). |
+| `EXTRACTION_TWO_STAGE_DEFAULT` | Optional. Run layout-then-structure unless the client overrides (default **false**). |
+| `EXTRACTION_PDF_TEXT_HINT`   | Optional. Pass embedded PDF text as a hint alongside the page image (default **true**). |
+| `EXTRACTION_CROSS_PAGE_WARNINGS` | Optional. Extra text-only consistency pass across pages (default **true**). |
 | `EXTRACTION_PAGE_CONCURRENCY` | Optional. Parallel vision calls per job (default **4**). |
 
 ### Frontend (`frontend/.env.local`)
@@ -142,7 +151,7 @@ The app will be available at `http://localhost:3000`.
 | `NEXT_PUBLIC_SUPABASE_URL`      | Supabase project URL            |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous key          |
 | `NEXT_PUBLIC_SITE_URL`          | Optional. **Canonical site URL** (no trailing slash), e.g. `https://cram-academy.vercel.app`. Used for **email confirmation** redirects on signup. If unset, the browser uses `window.location.origin` (fine when users sign up on the same host). Set on Vercel if links must always point at production. |
-| `NEXT_PUBLIC_API_URL`           | Optional. Omit locally to use `/backend-api` proxy to FastAPI. Set for production (full URL, no trailing slash). |
+| `NEXT_PUBLIC_API_URL`           | Optional. Omit locally to use `/backend-api` proxy to FastAPI. Set for production (full URL, no trailing slash). For **long NDJSON extraction streams**, pointing the browser **directly** at the API (not through the Next.js rewrite) avoids some proxies buffering chunks until the response ends, so the **progress bar** updates smoothly. |
 
 **Supabase email confirmation:** In **Authentication → URL configuration**, set **Site URL** to your production app (e.g. `https://cram-academy.vercel.app`) and add **Redirect URLs** including `https://cram-academy.vercel.app/login` and `http://localhost:3000/login` so `emailRedirectTo` from signup is allowed.
 
@@ -184,8 +193,9 @@ The app will be available at `http://localhost:3000`.
 | POST   | `/protests`                       | File a grade appeal        |
 | GET    | `/protests/submission/{id}`       | Get protests for submission|
 | GET    | `/health`                         | Health check               |
-| POST   | `/extraction/analyze`             | Multipart `files[]` + optional `max_pages`, `dpi` — vision extraction draft (auth) |
-| POST   | `/extraction/analyze-stream`      | Same as analyze; response is **NDJSON** with `progress` events then final `result` (used for UI progress) |
+| POST   | `/extraction/analyze`             | Multipart `files[]` + optional `max_pages`, `dpi`, `high_accuracy`, `two_stage` — vision extraction draft (auth) |
+| POST   | `/extraction/analyze-stream`      | Same as analyze; response is **NDJSON** with `progress` events then final `result` (used for UI progress). Stream headers disable caching/nginx buffering where possible. |
+| POST   | `/extraction/reanalyze-page`      | Multipart single page image (`file`) + optional `dpi`, `high_accuracy`, `two_stage` — re-run vision on one page (auth) |
 | POST   | `/extraction/commit`              | JSON body — create question sets + questions in personal bank (auth) |
 
 ---
@@ -213,6 +223,10 @@ The app will be available at `http://localhost:3000`.
 6. Add environment variables from `.env.example`
 
 **Render “Failed to fetch” / ~1 minute recovery:** On **free/starter** tiers, the web service **sleeps** after idle time. The first browser requests often fail with **Failed to fetch** until the dyno finishes cold-start (commonly **30–90 seconds**), which looks like “everything breaks, then it works again.” The frontend mitigates this when `NEXT_PUBLIC_API_URL` points at **onrender.com**: it **retries GETs** with backoff, **pings `/health`** before starting a long PDF extraction upload, and **retries** the extraction POST once or twice on network errors. For production traffic you can: use a **paid** instance that does not sleep, run an external **uptime monitor** hitting `GET /health` every few minutes to keep the service warm, or shorten very long extraction jobs if you hit **HTTP/proxy timeouts**.
+
+**Extraction timeouts:** The browser uses an **AbortSignal** budget that scales with **page count** and upload size (see `extractionTimeoutMs` in `frontend/src/lib/api.ts`). **Vercel** serverless functions have a **max duration** per plan; very large PDFs may need the API on a **long-timeout host** (e.g. Render web service) and/or **`NEXT_PUBLIC_API_URL`** so the stream is not cut off by an edge limit. Match **nginx** `proxy_read_timeout` (or your host’s equivalent) to your longest expected job.
+
+**Extraction regression smoke:** From `backend`, run `python scripts/extraction_golden_smoke.py` (imports only) or `python scripts/extraction_golden_smoke.py path/to/fixture.pdf` (live API; requires keys).
 
 ### Database → Supabase
 

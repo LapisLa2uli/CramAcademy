@@ -5,8 +5,10 @@ from typing import Any, AsyncIterator
 from config import get_settings
 from schemas.extraction import ExtractionAnalyzeResponse
 from services.extraction.consistency import collect_warnings
+from services.extraction.cross_page import build_page_summaries, cross_page_warning_pass
 from services.extraction.normalize import merge_page_results
 from services.extraction.openai_extract import extract_page
+from services.extraction.pdf_text_hint import extract_pdf_page_texts
 from services.extraction.render_pdf import (
     image_file_to_png_bytes,
     pdf_bytes_to_png_pages,
@@ -33,7 +35,6 @@ def _prepare_pages_from_uploads(
     if not files:
         return []
 
-    # Single PDF
     if len(files) == 1 and _is_pdf(files[0][1]):
         pngs = pdf_bytes_to_png_pages(files[0][1], max_pages=max_pages, dpi=dpi)
         out: list[tuple[int, bytes, int, int]] = []
@@ -42,7 +43,6 @@ def _prepare_pages_from_uploads(
             out.append((i, resized, w, h))
         return out
 
-    # One or more images → one page each
     out2: list[tuple[int, bytes, int, int]] = []
     for i, (_, raw) in enumerate(files[:max_pages]):
         png = image_file_to_png_bytes(raw)
@@ -55,7 +55,9 @@ async def iter_analyze(
     files: list[tuple[str, bytes]],
     *,
     max_pages: int | None = None,
-    dpi: int = 160,
+    dpi: int | None = None,
+    high_accuracy: bool = False,
+    two_stage: bool = False,
 ) -> AsyncIterator[dict[str, Any]]:
     """Yield NDJSON-friendly events: ``progress`` then ``result``."""
     settings = get_settings()
@@ -64,10 +66,20 @@ async def iter_analyze(
 
     limit = max_pages if max_pages is not None else settings.extraction_max_pages
     limit = min(limit, settings.extraction_max_pages)
+    dpi_val = dpi if dpi is not None else settings.extraction_default_dpi
     max_edge = settings.extraction_max_image_edge_px
+    if high_accuracy:
+        max_edge = max(max_edge, settings.extraction_high_accuracy_max_edge_px)
+        dpi_val = max(dpi_val, 200)
+
+    pdf_text_by_page: dict[int, str] = {}
+    if settings.extraction_pdf_text_hint and len(files) == 1 and _is_pdf(files[0][1]):
+        pdf_text_by_page = extract_pdf_page_texts(files[0][1], max_pages=limit)
+
+    effective_two_stage = two_stage or settings.extraction_two_stage_default
 
     pages = _prepare_pages_from_uploads(
-        files, max_pages=limit, max_edge=max_edge, dpi=dpi
+        files, max_pages=limit, max_edge=max_edge, dpi=dpi_val
     )
     if not pages:
         r = ExtractionAnalyzeResponse(warnings=["No pages to analyze."], pages=[], sets=[])
@@ -82,10 +94,18 @@ async def iter_analyze(
 
     sem = asyncio.Semaphore(max(1, settings.extraction_page_concurrency))
 
-    async def one_page(idx: int, png: bytes, w: int, h: int) -> tuple[int, dict[str, Any], bytes, int, int]:
+    async def one_page(
+        idx: int, png: bytes, w: int, h: int
+    ) -> tuple[int, dict[str, Any], bytes, int, int, list[str]]:
         async with sem:
-            raw = await extract_page(idx, png)
-        return (idx, raw, png, w, h)
+            ptext = pdf_text_by_page.get(idx)
+            raw, wlocal = await extract_page(
+                idx,
+                png,
+                pdf_page_text=ptext,
+                two_stage=effective_two_stage,
+            )
+        return (idx, raw, png, w, h, wlocal)
 
     tasks = [
         asyncio.create_task(one_page(i, png, w, h))
@@ -97,15 +117,26 @@ async def iter_analyze(
     done = 0
     for fut in asyncio.as_completed(tasks):
         try:
-            page_results.append(await fut)
+            idx, raw, png, w, h, wloc = await fut
+            page_results.append((idx, raw, png, w, h))
+            warn.extend(wloc)
         except BaseException as e:
             warn.append(f"Page failed: {e}")
         done += 1
         yield {"type": "progress", "completed": done, "total": total}
 
     page_results.sort(key=lambda x: x[0])
+
     pages_out, sets_out = merge_page_results(page_results)
     warn.extend(collect_warnings(sets_out))
+
+    if settings.extraction_cross_page_warnings and len(page_results) >= 2:
+        summaries = build_page_summaries(page_results)
+        try:
+            warn.extend(await cross_page_warning_pass(summaries))
+        except Exception as e:
+            logger.warning("cross_page_warning_pass skipped: %s", e)
+
     r = ExtractionAnalyzeResponse(warnings=warn, pages=pages_out, sets=sets_out)
     yield {"type": "result", "data": r.model_dump(mode="json")}
 
@@ -114,10 +145,18 @@ async def run_analyze(
     files: list[tuple[str, bytes]],
     *,
     max_pages: int | None = None,
-    dpi: int = 160,
+    dpi: int | None = None,
+    high_accuracy: bool = False,
+    two_stage: bool = False,
 ) -> ExtractionAnalyzeResponse:
     last: ExtractionAnalyzeResponse | None = None
-    async for ev in iter_analyze(files, max_pages=max_pages, dpi=dpi):
+    async for ev in iter_analyze(
+        files,
+        max_pages=max_pages,
+        dpi=dpi,
+        high_accuracy=high_accuracy,
+        two_stage=two_stage,
+    ):
         if ev.get("type") == "result":
             last = ExtractionAnalyzeResponse.model_validate(ev["data"])
     if last is None:

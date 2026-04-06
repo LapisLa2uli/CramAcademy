@@ -38,13 +38,41 @@ Return ONLY valid JSON (no markdown) matching this structure:
 }
 Rules:
 - bbox uses normalized coordinates: origin top-left, x,y width height all 0-1 relative to this page image.
+- **Do not invent** questions, options, or answers. If text is unreadable, use empty string and confidence under 0.5.
+- **Reading order**: top-to-bottom; for two-column pages, finish the left column then the right column.
 - Transcribe all visible text for MCQ stems, choices, answer keys, and explanations.
-- For MCQ, include 4 options when present; labels A-D.
+- For MCQ, draw a separate **choice** region per option (A–D) when layout allows; include 4 options in `questions[].options` when present.
 - If a passage applies to multiple questions, use one set with context_text + multiple questions.
 - If the page has unrelated standalone questions, use separate set_index values (0,1,2...) on this page.
 - question_index is 1-based within each set.
 - For FRQ, if no rubric is visible, set rubric to null and still extract content and answer (model solution).
+
+Mini example (illustrative shape only):
+{"regions":[{"id":"r1","role":"question_stem","label":"Q1 stem","bbox":{"x":0.1,"y":0.2,"w":0.8,"h":0.08},"text":"What is 2+2?","set_index":0,"question_index":1,"choice_label":null,"applies_to_question_numbers":null,"confidence":0.95}],"sets":[{"set_index":0,"context_text":"","shared_stems":[],"questions":[{"question_index":1,"type":"mcq","content":"What is 2+2?","options":[{"label":"A","text":"3"},{"label":"B","text":"4"}],"answer":"B","explanation":"","rubric":null}]}]}
 """
 
 PAGE_EXTRACTION_USER = """Page index in document: {page_index} (0-based).
+{hint_block}
 Analyze this page and output the JSON object described in the system message."""
+
+LAYOUT_ONLY_SYSTEM = """You locate exam content on one page image. Return ONLY valid JSON:
+{"regions": [ same region objects as the full schema: id, role, label, bbox{x,y,w,h}, text (transcribe if easy else ""), set_index, question_index, choice_label, applies_to_question_numbers, confidence ]}
+Use roles: context, shared_stem, question_stem, choice, answer_key, explanation, frq_prompt, other.
+Do not output "sets". Focus on accurate boxes and reading order. No markdown."""
+
+LAYOUT_ONLY_USER = """Page index: {page_index}. Draw tight bounding boxes for every distinct exam block."""
+
+FIX_OUTPUT_SYSTEM = """You fix a previous JSON extraction for one exam page. The prior output had validation problems.
+Return ONLY the same JSON shape as the original task: object with "regions" and "sets" arrays (full schema).
+Preserve correct content; repair structure, missing options, bad types, or empty required fields. No markdown."""
+
+FIX_OUTPUT_USER = """Page index: {page_index}.
+Validation issues:
+{issues}
+
+Previous JSON (may be truncated):
+{previous_json}
+"""
+
+
+CROSS_PAGE_USER = """See system message."""

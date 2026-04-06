@@ -48,6 +48,51 @@ function isNetworkFailure(e: unknown): boolean {
   return msg === "Failed to fetch" || msg.includes("Failed to fetch");
 }
 
+function isPdfFile(f: File): boolean {
+  return f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+}
+
+/** Wall-clock budget for full extraction stream (upload + N vision calls + merge). */
+export function extractionTimeoutMs(files: File[], maxPages: number): number {
+  const totalBytes = files.reduce((s, f) => s + f.size, 0);
+  const mb = totalBytes / (1024 * 1024);
+  const nPages =
+    files.length === 1 && isPdfFile(files[0])
+      ? maxPages
+      : Math.min(files.length, maxPages);
+  const base = 90_000;
+  const perPage = 55_000;
+  const perMb = 4_000;
+  const cap = 50 * 60 * 1000;
+  return Math.min(cap, Math.max(150_000, base + nPages * perPage + mb * perMb));
+}
+
+function isLikelyTimeoutAbort(e: unknown): boolean {
+  if (e instanceof DOMException && e.name === "AbortError") return true;
+  if (e instanceof Error && e.name === "TimeoutError") return true;
+  return false;
+}
+
+function buildExtractionFormData(
+  files: File[],
+  opts?: {
+    max_pages?: number;
+    dpi?: number;
+    high_accuracy?: boolean;
+    two_stage?: boolean;
+  }
+): FormData {
+  const fd = new FormData();
+  for (const f of files) {
+    fd.append("files", f);
+  }
+  if (opts?.max_pages != null) fd.append("max_pages", String(opts.max_pages));
+  if (opts?.dpi != null) fd.append("dpi", String(opts.dpi));
+  fd.append("high_accuracy", opts?.high_accuracy ? "true" : "false");
+  fd.append("two_stage", opts?.two_stage ? "true" : "false");
+  return fd;
+}
+
 /**
  * Wake a sleeping host (no auth). Skipped for same-origin proxy in dev.
  */
@@ -107,7 +152,7 @@ async function apiFetch<T>(
   const maxAttempts =
     method === "GET" || method === "HEAD" ? (isLikelyColdStartHost() ? 4 : 2) : 1;
 
-  let res: Response;
+  let res: Response | undefined;
   let lastNet: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
@@ -134,6 +179,11 @@ async function apiFetch<T>(
         throw e;
       }
     }
+  }
+
+  if (!res) {
+    const msg = lastNet instanceof Error ? lastNet.message : String(lastNet ?? "unknown");
+    throw new Error(`${msg}. ${networkErrorHint()}`);
   }
 
   if (!res.ok) {
@@ -328,16 +378,13 @@ export const api = {
       opts?: {
         max_pages?: number;
         dpi?: number;
+        high_accuracy?: boolean;
+        two_stage?: boolean;
         onProgress?: (completed: number, total: number) => void;
       }
     ): Promise<ExtractionAnalyzeResponse> {
       const token = await getToken();
-      const fd = new FormData();
-      for (const f of files) {
-        fd.append("files", f);
-      }
-      if (opts?.max_pages != null) fd.append("max_pages", String(opts.max_pages));
-      if (opts?.dpi != null) fd.append("dpi", String(opts.dpi));
+      const maxPages = opts?.max_pages ?? 24;
 
       /** Cheap GET before large upload — reduces “Failed to fetch” when Render is asleep. */
       if (isLikelyColdStartHost()) {
@@ -357,6 +404,13 @@ export const api = {
         if (a > 0) {
           await sleep(2000 * a);
         }
+        const fd = buildExtractionFormData(files, {
+          max_pages: maxPages,
+          dpi: opts?.dpi,
+          high_accuracy: opts?.high_accuracy,
+          two_stage: opts?.two_stage,
+        });
+        const signal = AbortSignal.timeout(extractionTimeoutMs(files, maxPages));
         try {
           res = await fetch(requestUrl("/extraction/analyze-stream"), {
             method: "POST",
@@ -364,9 +418,15 @@ export const api = {
               Authorization: `Bearer ${token}`,
             },
             body: fd,
+            signal,
           });
           break;
         } catch (e) {
+          if (isLikelyTimeoutAbort(e)) {
+            throw new Error(
+              "Extraction timed out. Try fewer pages, lower “max pages”, or enable direct API URL (see README)."
+            );
+          }
           if (!isNetworkFailure(e) || a === streamAttempts - 1) {
             const msg = e instanceof Error ? e.message : String(e);
             if (isNetworkFailure(e)) {
@@ -433,6 +493,11 @@ export const api = {
         try {
           chunk = await reader.read();
         } catch (e) {
+          if (isLikelyTimeoutAbort(e)) {
+            throw new Error(
+              "Extraction timed out while reading the stream. For large PDFs use High accuracy (higher DPI) only if needed, reduce max pages, or host the API with longer proxy timeouts."
+            );
+          }
           const msg = e instanceof Error ? e.message : String(e);
           const tail = isLikelyColdStartHost()
             ? " Hosted APIs sometimes close long streams (idle sleep, or HTTP/proxy time limits)."
@@ -457,6 +522,46 @@ export const api = {
       }
       return result;
     },
+
+    async reanalyzePage(
+      file: File,
+      opts?: { dpi?: number; high_accuracy?: boolean; two_stage?: boolean }
+    ): Promise<ExtractionAnalyzeResponse> {
+      const token = await getToken();
+      const fd = new FormData();
+      fd.append("file", file);
+      if (opts?.dpi != null) fd.append("dpi", String(opts.dpi));
+      fd.append("high_accuracy", opts?.high_accuracy ? "true" : "false");
+      fd.append("two_stage", opts?.two_stage ? "true" : "false");
+      const signal = AbortSignal.timeout(extractionTimeoutMs([file], 1));
+      let res: Response;
+      try {
+        res = await fetch(requestUrl("/extraction/reanalyze-page"), {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: fd,
+          signal,
+        });
+      } catch (e) {
+        if (isLikelyTimeoutAbort(e)) {
+          throw new Error("Re-analyze timed out. Try turning off two-stage or use a smaller page image.");
+        }
+        throw e;
+      }
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ detail: res.statusText }));
+        const detail = error.detail;
+        const msg =
+          typeof detail === "string"
+            ? detail
+            : detail != null
+              ? JSON.stringify(detail)
+              : res.statusText;
+        throw new Error(msg || "Re-analyze failed");
+      }
+      return res.json() as Promise<ExtractionAnalyzeResponse>;
+    },
+
     commit(body: ExtractionCommitBody) {
       return apiFetch<{ created_set_ids: string[]; question_counts: number[] }>(
         "/extraction/commit",

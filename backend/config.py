@@ -30,8 +30,20 @@ class Settings(BaseSettings):
 
     extraction_enabled: bool = True
     extraction_max_pages: int = 24
-    extraction_max_image_edge_px: int = 1600
+    extraction_max_image_edge_px: int = 2048
+    extraction_high_accuracy_max_edge_px: int = 2560
+    extraction_default_dpi: int = 160
     extraction_page_concurrency: int = 4
+    # Vision model (falls back to openai_model)
+    extraction_model: str = ""
+    # low | high | auto — passed to image_url when supported
+    extraction_image_detail: str = "high"
+    # httpx read timeout per upstream OpenAI-compatible call (seconds)
+    extraction_openai_read_timeout_seconds: float = 180.0
+    extraction_use_json_schema: bool = True
+    extraction_two_stage_default: bool = False
+    extraction_pdf_text_hint: bool = True
+    extraction_cross_page_warnings: bool = True
 
     class Config:
         env_file = ".env"

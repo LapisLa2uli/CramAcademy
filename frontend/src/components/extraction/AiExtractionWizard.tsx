@@ -13,6 +13,16 @@ import ExtractionOverlayCanvas from "./ExtractionOverlayCanvas";
 
 type Step = "upload" | "analyze" | "review" | "done";
 
+async function pagePngToFile(page: ExtractionPage): Promise<File> {
+  const raw = page.image_base64.trim();
+  const url = raw.startsWith("data:") ? raw : `data:image/png;base64,${raw}`;
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new File([blob], `page-${page.page_index + 1}.png`, {
+    type: blob.type || "image/png",
+  });
+}
+
 function defaultFrqRubric(answer: string) {
   const hint = answer.trim().slice(0, 800);
   return {
@@ -47,6 +57,10 @@ export default function AiExtractionWizard() {
     completed: number;
     total: number;
   } | null>(null);
+  const [highAccuracy, setHighAccuracy] = useState(false);
+  const [twoStage, setTwoStage] = useState(false);
+  const [regenBusy, setRegenBusy] = useState(false);
+  const [pageRegenHint, setPageRegenHint] = useState<string | null>(null);
 
   const pages: ExtractionPage[] = data?.pages ?? [];
   const currentPage = pages[pageIdx] ?? null;
@@ -64,6 +78,8 @@ export default function AiExtractionWizard() {
       const res = await api.extraction.analyze(files, {
         max_pages: 24,
         dpi: 160,
+        high_accuracy: highAccuracy,
+        two_stage: twoStage,
         onProgress: (completed, total) => {
           setAnalyzeProgress({ completed, total });
         },
@@ -71,6 +87,7 @@ export default function AiExtractionWizard() {
       setData(res);
       setEditableSets(structuredClone(res.sets));
       setPageIdx(0);
+      setPageRegenHint(null);
       setStep("review");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Analysis failed.");
@@ -93,6 +110,45 @@ export default function AiExtractionWizard() {
     },
     []
   );
+
+  const regenerateCurrentPage = useCallback(async () => {
+    if (!currentPage || !data) return;
+    setErr(null);
+    setPageRegenHint(null);
+    setRegenBusy(true);
+    try {
+      const f = await pagePngToFile(currentPage);
+      const res = await api.extraction.reanalyzePage(f, {
+        dpi: 160,
+        high_accuracy: highAccuracy,
+        two_stage: twoStage,
+      });
+      const newP = res.pages[0];
+      if (!newP) {
+        setErr("Re-analyze returned no page.");
+        return;
+      }
+      const keepIdx = currentPage.page_index;
+      setData((prev) => {
+        if (!prev) return prev;
+        const nextPages = [...prev.pages];
+        nextPages[pageIdx] = { ...newP, page_index: keepIdx };
+        const mergedWarn = [...new Set([...prev.warnings, ...res.warnings])];
+        return { ...prev, pages: nextPages, warnings: mergedWarn };
+      });
+      if (pages.length === 1) {
+        setEditableSets(structuredClone(res.sets));
+      } else {
+        setPageRegenHint(
+          "Overlay for this page was refreshed. Detected question lists still reflect the full-document run; edit text manually or run analyze again on a single-page file to resync structure."
+        );
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Re-analyze failed.");
+    } finally {
+      setRegenBusy(false);
+    }
+  }, [currentPage, data, highAccuracy, twoStage, pageIdx, pages.length]);
 
   const updateSetContext = useCallback((setIndex: number, context_text: string) => {
     setEditableSets((prev) => {
@@ -195,6 +251,36 @@ export default function AiExtractionWizard() {
             className="text-sm text-gray-700"
             onChange={(e) => setFiles(Array.from(e.target.files || []))}
           />
+          <div className="space-y-2 text-sm text-gray-700">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 rounded border-gray-300"
+                checked={highAccuracy}
+                onChange={(e) => setHighAccuracy(e.target.checked)}
+              />
+              <span>
+                <span className="font-medium text-gray-900">High accuracy</span>
+                <span className="block text-gray-600 text-xs mt-0.5">
+                  Higher render DPI and longer image edge (slower, more cost). Recommended for dense or small print.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 rounded border-gray-300"
+                checked={twoStage}
+                onChange={(e) => setTwoStage(e.target.checked)}
+              />
+              <span>
+                <span className="font-medium text-gray-900">Two-stage extraction</span>
+                <span className="block text-gray-600 text-xs mt-0.5">
+                  Layout pass then structure (extra latency; can improve boxes on busy pages).
+                </span>
+              </span>
+            </label>
+          </div>
           <button
             type="button"
             className="btn-primary"
@@ -269,7 +355,20 @@ export default function AiExtractionWizard() {
                     </option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  className="text-sm px-3 py-1 rounded-md border border-gray-300 text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                  disabled={regenBusy || !currentPage}
+                  onClick={() => void regenerateCurrentPage()}
+                >
+                  {regenBusy ? "Re-running…" : "Re-run vision on this page"}
+                </button>
               </div>
+              {pageRegenHint && (
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-3 py-2">
+                  {pageRegenHint}
+                </p>
+              )}
               {currentPage ? (
                 <ExtractionOverlayCanvas
                   imageBase64={currentPage.image_base64}

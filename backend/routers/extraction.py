@@ -25,6 +25,18 @@ def _is_pdf(data: bytes) -> bool:
     return data.startswith(_PDF_SIG)
 
 
+def _form_truthy(v: str | bool) -> bool:
+    if isinstance(v, bool):
+        return v
+    return str(v).strip().lower() in ("true", "1", "yes", "on")
+
+
+_STREAM_HEADERS = {
+    "Cache-Control": "no-cache, no-transform",
+    "X-Accel-Buffering": "no",
+}
+
+
 async def _load_extraction_files(files: list[UploadFile]) -> list[tuple[str, bytes]]:
     if not files:
         raise HTTPException(status_code=422, detail="No files uploaded.")
@@ -55,6 +67,8 @@ async def extraction_analyze(
     files: list[UploadFile] = File(...),
     max_pages: int = Form(20),
     dpi: int = Form(160),
+    high_accuracy: str = Form("false"),
+    two_stage: str = Form("false"),
 ):
     settings = get_settings()
     if not settings.extraction_enabled:
@@ -64,7 +78,13 @@ async def extraction_analyze(
     chunks = await _load_extraction_files(files)
 
     try:
-        return await run_analyze(chunks, max_pages=max_pages, dpi=dpi)
+        return await run_analyze(
+            chunks,
+            max_pages=max_pages,
+            dpi=dpi,
+            high_accuracy=_form_truthy(high_accuracy),
+            two_stage=_form_truthy(two_stage),
+        )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
 
@@ -75,6 +95,8 @@ async def extraction_analyze_stream(
     files: list[UploadFile] = File(...),
     max_pages: int = Form(20),
     dpi: int = Form(160),
+    high_accuracy: str = Form("false"),
+    two_stage: str = Form("false"),
 ):
     """NDJSON stream: ``progress`` lines then final ``result`` (same payload as ``/analyze``)."""
     settings = get_settings()
@@ -83,10 +105,18 @@ async def extraction_analyze_stream(
 
     get_bearer_user_id(authorization)
     chunks = await _load_extraction_files(files)
+    ha = _form_truthy(high_accuracy)
+    ts = _form_truthy(two_stage)
 
     async def ndjson_body():
         try:
-            async for ev in iter_analyze(chunks, max_pages=max_pages, dpi=dpi):
+            async for ev in iter_analyze(
+                chunks,
+                max_pages=max_pages,
+                dpi=dpi,
+                high_accuracy=ha,
+                two_stage=ts,
+            ):
                 yield (json.dumps(ev, ensure_ascii=False) + "\n").encode("utf-8")
         except RuntimeError as e:
             err = json.dumps({"type": "error", "detail": str(e)}, ensure_ascii=False) + "\n"
@@ -95,7 +125,39 @@ async def extraction_analyze_stream(
     return StreamingResponse(
         ndjson_body(),
         media_type="application/x-ndjson",
+        headers=_STREAM_HEADERS,
     )
+
+
+@router.post("/reanalyze-page", response_model=ExtractionAnalyzeResponse)
+async def extraction_reanalyze_page(
+    authorization: str = Header(...),
+    file: UploadFile = File(...),
+    dpi: int = Form(160),
+    high_accuracy: str = Form("true"),
+    two_stage: str = Form("false"),
+):
+    """Re-run vision on a single page image (e.g. one exported page)."""
+    settings = get_settings()
+    if not settings.extraction_enabled:
+        raise HTTPException(status_code=503, detail="Extraction is disabled.")
+
+    get_bearer_user_id(authorization)
+    raw = await file.read()
+    if len(raw) > _MAX_TOTAL_BYTES:
+        raise HTTPException(status_code=413, detail="File too large.")
+    chunks = [(file.filename or "page.png", raw)]
+
+    try:
+        return await run_analyze(
+            chunks,
+            max_pages=1,
+            dpi=dpi,
+            high_accuracy=_form_truthy(high_accuracy),
+            two_stage=_form_truthy(two_stage),
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
 
 
 @router.post("/commit", response_model=ExtractionCommitResponse)
