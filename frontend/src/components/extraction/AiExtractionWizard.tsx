@@ -4,7 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { buildExtractionCommitPayload } from "@/lib/extraction/buildExtractionCommitPayload";
+import {
+  buildCommitFromSlotLayout,
+  validateLayoutCommit,
+} from "@/lib/extraction/buildCommitFromSlotLayout";
 import { cropNormRectToPngBlob } from "@/lib/extraction/cropExtractionImage";
+import type { LayoutSetTemplate } from "@/lib/extraction/slotLayoutTypes";
 import type {
   ExtractionAnalyzeResponse,
   ExtractionNormRect,
@@ -13,8 +18,10 @@ import type {
 } from "@/types";
 import SubjectPicker from "@/components/SubjectPicker";
 import ExtractionReviewOverlay from "./ExtractionReviewOverlay";
+import LayoutTemplatePanel from "./LayoutTemplatePanel";
 
 type Step = "upload" | "analyze" | "review" | "done";
+type ExtractionMode = "full" | "layout";
 
 async function pagePngToFile(page: ExtractionPage): Promise<File> {
   const raw = page.image_base64.trim();
@@ -55,7 +62,14 @@ export default function AiExtractionWizard() {
   const cropPreviewsRef = useRef<Record<string, string>>({});
   cropPreviewsRef.current = cropPreviews;
 
-  const pages: ExtractionPage[] = data?.pages ?? [];
+  const [extractionMode, setExtractionMode] = useState<ExtractionMode>("full");
+  const [layoutPages, setLayoutPages] = useState<ExtractionPage[] | null>(null);
+  const [layoutTemplates, setLayoutTemplates] = useState<LayoutSetTemplate[]>([]);
+  const [layoutAssignments, setLayoutAssignments] = useState<Record<string, string | null>>({});
+  const [layoutManualAnswers, setLayoutManualAnswers] = useState<Record<string, string>>({});
+
+  const pages: ExtractionPage[] =
+    extractionMode === "layout" && layoutPages ? layoutPages : data?.pages ?? [];
   const currentPage = pages[pageIdx] ?? null;
 
   const startAnalyze = async () => {
@@ -72,7 +86,8 @@ export default function AiExtractionWizard() {
         max_pages: 24,
         dpi: 160,
         high_accuracy: highAccuracy,
-        two_stage: twoStage,
+        two_stage: extractionMode === "layout" ? false : twoStage,
+        layout_only: extractionMode === "layout",
         disableClientTimeout: noBrowserTimeLimit,
         onProgress: (completed, total) => {
           setAnalyzeProgress({ completed, total });
@@ -81,6 +96,14 @@ export default function AiExtractionWizard() {
       setData(res);
       setEditableSets(structuredClone(res.sets));
       setBboxOverrides({});
+      if (extractionMode === "layout") {
+        setLayoutPages(structuredClone(res.pages));
+        setLayoutTemplates([]);
+        setLayoutAssignments({});
+        setLayoutManualAnswers({});
+      } else {
+        setLayoutPages(null);
+      }
       setPageIdx(0);
       setPageRegenHint(null);
       setStep("review");
@@ -116,7 +139,8 @@ export default function AiExtractionWizard() {
       const res = await api.extraction.reanalyzePage(f, {
         dpi: 160,
         high_accuracy: highAccuracy,
-        two_stage: twoStage,
+        two_stage: extractionMode === "layout" ? false : twoStage,
+        layout_only: extractionMode === "layout",
       });
       const newP = res.pages[0];
       if (!newP) {
@@ -131,7 +155,24 @@ export default function AiExtractionWizard() {
         const mergedWarn = [...new Set([...prev.warnings, ...res.warnings])];
         return { ...prev, pages: nextPages, warnings: mergedWarn };
       });
-      if (pages.length === 1) {
+      if (extractionMode === "layout") {
+        setLayoutPages((prev) => {
+          if (!prev) return prev;
+          const next = [...prev];
+          next[pageIdx] = { ...newP, page_index: keepIdx };
+          return next;
+        });
+        const newIds = new Set(newP.regions.map((r) => r.id));
+        setLayoutAssignments((a) => {
+          const n = { ...a };
+          for (const k of Object.keys(n)) {
+            const v = n[k];
+            if (v && !newIds.has(v)) delete n[k];
+          }
+          return n;
+        });
+        setPageRegenHint(null);
+      } else if (pages.length === 1) {
         setEditableSets(structuredClone(res.sets));
       } else {
         setPageRegenHint(
@@ -143,7 +184,7 @@ export default function AiExtractionWizard() {
     } finally {
       setRegenBusy(false);
     }
-  }, [currentPage, data, highAccuracy, twoStage, pageIdx, pages.length]);
+  }, [currentPage, data, highAccuracy, twoStage, pageIdx, pages.length, extractionMode]);
 
   const updateSetContext = useCallback((setIndex: number, context_text: string) => {
     setEditableSets((prev) => {
@@ -157,8 +198,23 @@ export default function AiExtractionWizard() {
 
   const canCommit = useMemo(() => {
     if (!subjectName.trim() || !data) return false;
+    if (extractionMode === "layout") {
+      if (!layoutPages?.length || layoutTemplates.length === 0) return false;
+      return (
+        validateLayoutCommit(layoutTemplates, layoutAssignments, layoutManualAnswers) === null
+      );
+    }
     return editableSets.some((s) => s.questions.length > 0);
-  }, [subjectName, editableSets, data]);
+  }, [
+    subjectName,
+    data,
+    extractionMode,
+    layoutPages,
+    layoutTemplates,
+    layoutAssignments,
+    layoutManualAnswers,
+    editableSets,
+  ]);
 
   useEffect(() => {
     if (step !== "review" || !currentPage) return;
@@ -169,7 +225,12 @@ export default function AiExtractionWizard() {
         const next: Record<string, string> = {};
         try {
           for (const r of page.regions) {
-            if (r.role !== "context" && r.role !== "question_stem" && r.role !== "choice") {
+            if (
+              extractionMode === "full" &&
+              r.role !== "context" &&
+              r.role !== "question_stem" &&
+              r.role !== "choice"
+            ) {
               continue;
             }
             const bb = bboxOverrides[r.id] ?? r.bbox;
@@ -206,7 +267,7 @@ export default function AiExtractionWizard() {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [step, currentPage, bboxOverrides]);
+  }, [step, currentPage, bboxOverrides, extractionMode]);
 
   useEffect(() => {
     return () => {
@@ -226,22 +287,52 @@ export default function AiExtractionWizard() {
     setErr(null);
     setBusy(true);
     try {
-      const payload = await buildExtractionCommitPayload({
-        userId: user.id,
-        data,
-        editableSets,
-        bboxOverrides,
-        subject: subjectName.trim(),
-        subject_id: subjectId || undefined,
-        course_level: courseLevel || undefined,
-        grade_level: gradeLevel === "" ? undefined : Number(gradeLevel),
-        tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-      });
-      if (payload.sets.length === 0) {
-        setErr("No question sets with questions to save.");
-        return;
+      if (extractionMode === "layout") {
+        const verr = validateLayoutCommit(
+          layoutTemplates,
+          layoutAssignments,
+          layoutManualAnswers
+        );
+        if (verr) {
+          setErr(verr);
+          return;
+        }
+        if (!layoutPages) {
+          setErr("Layout data missing.");
+          return;
+        }
+        const payload = await buildCommitFromSlotLayout({
+          userId: user.id,
+          pages: layoutPages,
+          templates: layoutTemplates,
+          assignments: layoutAssignments,
+          manualAnswers: layoutManualAnswers,
+          bboxOverrides,
+          subject: subjectName.trim(),
+          subject_id: subjectId || undefined,
+          course_level: courseLevel || undefined,
+          grade_level: gradeLevel === "" ? undefined : Number(gradeLevel),
+          tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+        });
+        await api.extraction.commit(payload);
+      } else {
+        const payload = await buildExtractionCommitPayload({
+          userId: user.id,
+          data,
+          editableSets,
+          bboxOverrides,
+          subject: subjectName.trim(),
+          subject_id: subjectId || undefined,
+          course_level: courseLevel || undefined,
+          grade_level: gradeLevel === "" ? undefined : Number(gradeLevel),
+          tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+        });
+        if (payload.sets.length === 0) {
+          setErr("No question sets with questions to save.");
+          return;
+        }
+        await api.extraction.commit(payload);
       }
-      await api.extraction.commit(payload);
       setStep("done");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Commit failed.");
@@ -263,6 +354,11 @@ export default function AiExtractionWizard() {
           setFiles([]);
           setData(null);
           setEditableSets([]);
+          setLayoutPages(null);
+          setLayoutTemplates([]);
+          setLayoutAssignments({});
+          setLayoutManualAnswers({});
+          setExtractionMode("full");
           setErr(null);
         }}>
           Extract another document
@@ -276,7 +372,8 @@ export default function AiExtractionWizard() {
       <div>
         <h2 className="text-xl font-semibold text-gray-900">AI extract (PDF or images)</h2>
         <p className="text-sm text-gray-600 mt-1">
-          Upload one PDF or several page images. The model proposes regions and question structure; review before saving.
+          Upload one PDF or several page images. Choose full AI extraction or layout-only boxes, then build question sets
+          and save to your bank.
         </p>
       </div>
 
@@ -289,7 +386,40 @@ export default function AiExtractionWizard() {
             className="text-sm text-gray-700"
             onChange={(e) => setFiles(Array.from(e.target.files || []))}
           />
-          <div className="space-y-2 text-sm text-gray-700">
+          <div className="space-y-3 text-sm text-gray-700">
+            <div className="space-y-2">
+              <span className="font-medium text-gray-900">Extraction mode</span>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="extraction-mode"
+                  className="mt-1"
+                  checked={extractionMode === "full"}
+                  onChange={() => setExtractionMode("full")}
+                />
+                <span>
+                  <span className="font-medium text-gray-900">Full extraction</span>
+                  <span className="block text-gray-600 text-xs mt-0.5">
+                    Model proposes regions, question text, and structure (slower).
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="extraction-mode"
+                  className="mt-1"
+                  checked={extractionMode === "layout"}
+                  onChange={() => setExtractionMode("layout")}
+                />
+                <span>
+                  <span className="font-medium text-gray-900">Layout scan only</span>
+                  <span className="block text-gray-600 text-xs mt-0.5">
+                    Bounding boxes only; you add question sets on the right and drag boxes into slots.
+                  </span>
+                </span>
+              </label>
+            </div>
             <label className="flex items-start gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -304,20 +434,22 @@ export default function AiExtractionWizard() {
                 </span>
               </span>
             </label>
-            <label className="flex items-start gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                className="mt-1 rounded border-gray-300"
-                checked={twoStage}
-                onChange={(e) => setTwoStage(e.target.checked)}
-              />
-              <span>
-                <span className="font-medium text-gray-900">Two-stage extraction</span>
-                <span className="block text-gray-600 text-xs mt-0.5">
-                  Layout pass then structure (extra latency; can improve boxes on busy pages).
+            {extractionMode === "full" ? (
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-1 rounded border-gray-300"
+                  checked={twoStage}
+                  onChange={(e) => setTwoStage(e.target.checked)}
+                />
+                <span>
+                  <span className="font-medium text-gray-900">Two-stage extraction</span>
+                  <span className="block text-gray-600 text-xs mt-0.5">
+                    Layout pass then structure (extra latency; can improve boxes on busy pages).
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+            ) : null}
             <label className="flex items-start gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -432,6 +564,7 @@ export default function AiExtractionWizard() {
                     onRegionBboxChange={(regionId, next) =>
                       setBboxOverrides((prev) => ({ ...prev, [regionId]: next }))
                     }
+                    enableRegionDragSource={extractionMode === "layout"}
                   />
                   {Object.keys(cropPreviews).length > 0 && (
                     <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
@@ -462,11 +595,27 @@ export default function AiExtractionWizard() {
             </div>
 
             <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
-              <h3 className="font-medium text-gray-800">Detected sets</h3>
-              {editableSets.length === 0 ? (
-                <p className="text-sm text-gray-500">No structured sets — try another document.</p>
+              {extractionMode === "layout" ? (
+                <>
+                  <h3 className="font-medium text-gray-800">Question templates</h3>
+                  <LayoutTemplatePanel
+                    templates={layoutTemplates}
+                    setTemplates={setLayoutTemplates}
+                    assignments={layoutAssignments}
+                    setAssignments={setLayoutAssignments}
+                    manualAnswers={layoutManualAnswers}
+                    setManualAnswers={setLayoutManualAnswers}
+                    regionPreviewById={cropPreviews}
+                  />
+                </>
               ) : (
-                editableSets.map((s) => (
+                <>
+                  <h3 className="font-medium text-gray-800">Detected sets</h3>
+                  {editableSets.length === 0 ? (
+                    <p className="text-sm text-gray-500">No structured sets — try another document.</p>
+                  ) : null}
+                  {editableSets.length > 0
+                    ? editableSets.map((s) => (
                   <div
                     key={s.set_index}
                     className="card p-4 space-y-3 border border-gray-200"
@@ -552,7 +701,9 @@ export default function AiExtractionWizard() {
                       </div>
                     ))}
                   </div>
-                ))
+                    ))
+                    : null}
+                </>
               )}
 
               <div className="card p-4 space-y-3 border-2 border-primary-100">
@@ -593,7 +744,9 @@ export default function AiExtractionWizard() {
                   />
                 </div>
                 <p className="text-xs text-gray-500">
-                  Free-response items without an AI rubric get a simple default rubric; edit the model answer above so expectations stay accurate.
+                  {extractionMode === "layout"
+                    ? "Fill slots by dragging layout boxes from the left. Type answers when needed, then commit."
+                    : "Free-response items without an AI rubric get a simple default rubric; edit the model answer above so expectations stay accurate."}
                 </p>
                 <button
                   type="button"

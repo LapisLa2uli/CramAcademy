@@ -123,6 +123,7 @@ function buildExtractionFormData(
     dpi?: number;
     high_accuracy?: boolean;
     two_stage?: boolean;
+    layout_only?: boolean;
   }
 ): FormData {
   const fd = new FormData();
@@ -133,6 +134,7 @@ function buildExtractionFormData(
   if (opts?.dpi != null) fd.append("dpi", String(opts.dpi));
   fd.append("high_accuracy", opts?.high_accuracy ? "true" : "false");
   fd.append("two_stage", opts?.two_stage ? "true" : "false");
+  fd.append("layout_only", opts?.layout_only ? "true" : "false");
   return fd;
 }
 
@@ -423,6 +425,8 @@ export const api = {
         dpi?: number;
         high_accuracy?: boolean;
         two_stage?: boolean;
+        /** Layout scan only (bounding boxes); no full text/structure extraction. */
+        layout_only?: boolean;
         /** If true, do not cap upload + stream read by the usual client wall clock (host/network may still limit). */
         disableClientTimeout?: boolean;
         onProgress?: (completed: number, total: number) => void;
@@ -457,6 +461,7 @@ export const api = {
           dpi: opts?.dpi,
           high_accuracy: opts?.high_accuracy,
           two_stage: opts?.two_stage,
+          layout_only: opts?.layout_only,
         });
         streamStartedAt = performance.now();
         const fetchInit: RequestInit = {
@@ -772,7 +777,12 @@ export const api = {
 
     async reanalyzePage(
       file: File,
-      opts?: { dpi?: number; high_accuracy?: boolean; two_stage?: boolean }
+      opts?: {
+        dpi?: number;
+        high_accuracy?: boolean;
+        two_stage?: boolean;
+        layout_only?: boolean;
+      }
     ): Promise<ExtractionAnalyzeResponse> {
       const token = await getToken();
       const fd = new FormData();
@@ -780,6 +790,7 @@ export const api = {
       if (opts?.dpi != null) fd.append("dpi", String(opts.dpi));
       fd.append("high_accuracy", opts?.high_accuracy ? "true" : "false");
       fd.append("two_stage", opts?.two_stage ? "true" : "false");
+      fd.append("layout_only", opts?.layout_only ? "true" : "false");
       const signal = AbortSignal.timeout(extractionTimeoutMs([file], 1));
       let res: Response;
       try {

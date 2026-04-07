@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExtractionNormRect, ExtractionRegion, ExtractionRegionRole } from "@/types";
+import { REGION_DRAG_MIME } from "@/lib/extraction/slotLayoutTypes";
 
 const ROLE_STYLES: Record<
   ExtractionRegionRole,
@@ -69,6 +70,8 @@ interface ExtractionReviewOverlayProps {
   regions: ExtractionRegion[];
   bboxOverrides: Record<string, ExtractionNormRect>;
   onRegionBboxChange: (regionId: string, next: ExtractionNormRect) => void;
+  /** Grip on each box starts a drag to assign the region to a slot (layout mode). */
+  enableRegionDragSource?: boolean;
   className?: string;
 }
 
@@ -77,6 +80,7 @@ export default function ExtractionReviewOverlay({
   regions,
   bboxOverrides,
   onRegionBboxChange,
+  enableRegionDragSource = false,
   className = "",
 }: ExtractionReviewOverlayProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -252,6 +256,21 @@ export default function ExtractionReviewOverlay({
                 >
                   S{r.set_index} · {r.label}
                 </span>
+                {enableRegionDragSource ? (
+                  <span
+                    role="button"
+                    title="Drag to a slot on the right"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData(REGION_DRAG_MIME, r.id);
+                      e.dataTransfer.effectAllowed = "copy";
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="absolute top-0.5 right-0.5 z-30 px-1 py-0.5 rounded bg-white/95 border border-gray-300 text-[10px] cursor-grab active:cursor-grabbing shadow-sm"
+                  >
+                    ⣿
+                  </span>
+                ) : null}
                 {sel && (
                   <>
                     {(
@@ -282,8 +301,9 @@ export default function ExtractionReviewOverlay({
         </div>
       </div>
       <p className="text-xs text-gray-500">
-        Click a box to select. Drag inside to move; drag corners to resize. Crops used at commit refresh
-        after you pause (preview below).
+        {enableRegionDragSource
+          ? "Drag the ⣿ handle on a box into a slot on the right. Click a box to select; drag inside to move; corners to resize."
+          : "Click a box to select. Drag inside to move; drag corners to resize. Crops used at commit refresh after you pause (preview below)."}
       </p>
     </div>
   );

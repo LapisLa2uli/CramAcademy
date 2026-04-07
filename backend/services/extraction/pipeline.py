@@ -73,6 +73,7 @@ async def iter_analyze(
     dpi: int | None = None,
     high_accuracy: bool = False,
     two_stage: bool = False,
+    layout_only: bool = False,
 ) -> AsyncIterator[dict[str, Any]]:
     """Yield NDJSON: ``progress``, ``page_image`` (or begin/part/end), ``result`` or ``result_b64_*``."""
     settings = get_settings()
@@ -91,7 +92,7 @@ async def iter_analyze(
     if settings.extraction_pdf_text_hint and len(files) == 1 and _is_pdf(files[0][1]):
         pdf_text_by_page = extract_pdf_page_texts(files[0][1], max_pages=limit)
 
-    effective_two_stage = two_stage or settings.extraction_two_stage_default
+    effective_two_stage = (two_stage or settings.extraction_two_stage_default) and not layout_only
 
     pages = _prepare_pages_from_uploads(
         files, max_pages=limit, max_edge=max_edge, dpi=dpi_val
@@ -113,12 +114,13 @@ async def iter_analyze(
         idx: int, png: bytes, w: int, h: int
     ) -> tuple[int, dict[str, Any], bytes, int, int, list[str]]:
         async with sem:
-            ptext = pdf_text_by_page.get(idx)
+            ptext = pdf_text_by_page.get(idx) if not layout_only else None
             raw, wlocal = await extract_page(
                 idx,
                 png,
                 pdf_page_text=ptext,
                 two_stage=effective_two_stage,
+                layout_only=layout_only,
             )
         return (idx, raw, png, w, h, wlocal)
 
@@ -149,7 +151,11 @@ async def iter_analyze(
     pages_out, sets_out = merge_page_results(page_results)
     warn.extend(collect_warnings(sets_out))
 
-    if settings.extraction_cross_page_warnings and len(page_results) >= 2:
+    if (
+        settings.extraction_cross_page_warnings
+        and len(page_results) >= 2
+        and not layout_only
+    ):
         yield {"type": "status", "phase": "cross_page"}
         summaries = build_page_summaries(page_results)
         try:
@@ -245,6 +251,7 @@ async def run_analyze(
     dpi: int | None = None,
     high_accuracy: bool = False,
     two_stage: bool = False,
+    layout_only: bool = False,
 ) -> ExtractionAnalyzeResponse:
     last: ExtractionAnalyzeResponse | None = None
     page_images: dict[int, dict[str, Any]] = {}
@@ -258,6 +265,7 @@ async def run_analyze(
         dpi=dpi,
         high_accuracy=high_accuracy,
         two_stage=two_stage,
+        layout_only=layout_only,
     ):
         t = ev.get("type")
         if t == "page_image_begin":

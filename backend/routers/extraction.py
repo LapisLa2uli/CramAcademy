@@ -69,6 +69,7 @@ async def extraction_analyze(
     dpi: int = Form(160),
     high_accuracy: str = Form("false"),
     two_stage: str = Form("false"),
+    layout_only: str = Form("false"),
 ):
     settings = get_settings()
     if not settings.extraction_enabled:
@@ -84,6 +85,7 @@ async def extraction_analyze(
             dpi=dpi,
             high_accuracy=_form_truthy(high_accuracy),
             two_stage=_form_truthy(two_stage),
+            layout_only=_form_truthy(layout_only),
         )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
@@ -97,6 +99,7 @@ async def extraction_analyze_stream(
     dpi: int = Form(160),
     high_accuracy: str = Form("false"),
     two_stage: str = Form("false"),
+    layout_only: str = Form("false"),
 ):
     """NDJSON stream: ``progress`` lines then final ``result`` (same payload as ``/analyze``)."""
     settings = get_settings()
@@ -107,6 +110,7 @@ async def extraction_analyze_stream(
     chunks = await _load_extraction_files(files)
     ha = _form_truthy(high_accuracy)
     ts = _form_truthy(two_stage)
+    lo = _form_truthy(layout_only)
 
     async def ndjson_body():
         try:
@@ -116,6 +120,7 @@ async def extraction_analyze_stream(
                 dpi=dpi,
                 high_accuracy=ha,
                 two_stage=ts,
+                layout_only=lo,
             ):
                 try:
                     line = json.dumps(ev, ensure_ascii=False) + "\n"
@@ -151,6 +156,7 @@ async def extraction_reanalyze_page(
     dpi: int = Form(160),
     high_accuracy: str = Form("true"),
     two_stage: str = Form("false"),
+    layout_only: str = Form("false"),
 ):
     """Re-run vision on a single page image (e.g. one exported page)."""
     settings = get_settings()
@@ -170,6 +176,7 @@ async def extraction_reanalyze_page(
             dpi=dpi,
             high_accuracy=_form_truthy(high_accuracy),
             two_stage=_form_truthy(two_stage),
+            layout_only=_form_truthy(layout_only),
         )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e

@@ -233,9 +233,11 @@ async def extract_page(
     *,
     pdf_page_text: str | None = None,
     two_stage: bool = False,
+    layout_only: bool = False,
 ) -> tuple[dict[str, Any], list[str]]:
     """
     Returns (payload dict with regions+sets, per-page warnings).
+    If layout_only, runs only the layout vision pass (regions, empty sets).
     """
     warnings: list[str] = []
     t0 = time.perf_counter()
@@ -244,7 +246,41 @@ async def extract_page(
     b64 = base64.standard_b64encode(png_bytes).decode("ascii")
     data_url = f"data:image/png;base64,{b64}"
 
-    layout_json: dict[str, Any] | None = None
+    if layout_only:
+        layout_json: dict[str, Any] | None = None
+        try:
+            layout_json = await _chat(
+                client,
+                model,
+                LAYOUT_ONLY_SYSTEM,
+                LAYOUT_ONLY_USER.format(page_index=page_index),
+                data_url,
+                _response_format_layout(),
+            )
+        except Exception as e:
+            warnings.append(f"Page {page_index}: layout-only scan failed ({e}).")
+            layout_json = None
+        if layout_json and not isinstance(layout_json.get("regions"), list):
+            layout_json = None
+        regions = (
+            layout_json.get("regions", [])
+            if layout_json and isinstance(layout_json.get("regions"), list)
+            else []
+        )
+        if not isinstance(regions, list):
+            regions = []
+        data: dict[str, Any] = {"regions": regions, "sets": []}
+        elapsed = time.perf_counter() - t0
+        logger.info(
+            "extraction page=%s model=%s layout_only=True seconds=%.2f regions=%s",
+            page_index,
+            model,
+            elapsed,
+            len(data.get("regions") or []),
+        )
+        return data, warnings
+
+    layout_json = None
     if two_stage:
         try:
             layout_json = await _chat(
