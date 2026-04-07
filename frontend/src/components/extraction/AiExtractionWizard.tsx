@@ -59,6 +59,7 @@ export default function AiExtractionWizard() {
   } | null>(null);
   const [highAccuracy, setHighAccuracy] = useState(false);
   const [twoStage, setTwoStage] = useState(false);
+  const [noBrowserTimeLimit, setNoBrowserTimeLimit] = useState(false);
   const [regenBusy, setRegenBusy] = useState(false);
   const [pageRegenHint, setPageRegenHint] = useState<string | null>(null);
 
@@ -80,6 +81,7 @@ export default function AiExtractionWizard() {
         dpi: 160,
         high_accuracy: highAccuracy,
         two_stage: twoStage,
+        disableClientTimeout: noBrowserTimeLimit,
         onProgress: (completed, total) => {
           setAnalyzeProgress({ completed, total });
         },
@@ -277,6 +279,22 @@ export default function AiExtractionWizard() {
                 <span className="font-medium text-gray-900">Two-stage extraction</span>
                 <span className="block text-gray-600 text-xs mt-0.5">
                   Layout pass then structure (extra latency; can improve boxes on busy pages).
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 rounded border-gray-300"
+                checked={noBrowserTimeLimit}
+                onChange={(e) => setNoBrowserTimeLimit(e.target.checked)}
+              />
+              <span>
+                <span className="font-medium text-gray-900">No browser time limit</span>
+                <span className="block text-gray-600 text-xs mt-0.5">
+                  Do not stop the request after the usual client cap (about 50 minutes). Use for very
+                  large PDFs or slow APIs. Your hosting provider, reverse proxy, or network may still
+                  time out.
                 </span>
               </span>
             </label>

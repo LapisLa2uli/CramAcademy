@@ -68,11 +68,19 @@ export function extractionTimeoutMs(files: File[], maxPages: number): number {
 }
 
 /**
+ * When the user disables the client-side extraction timeout, we still arm a very long idle timer
+ * so a hung tab does not run forever. Browsers typically clamp setTimeout (~24.8 days max).
+ */
+const EXTRACTION_DISABLED_TIMEOUT_IDLE_MS = 2_147_483_647;
+
+/**
  * While reading the NDJSON body: extend the deadline on each chunk (merge / huge `result` JSON
  * can leave the stream quiet for a long time; proxies may drop idle connections — server sends
  * `status` heartbeats too). Does not run during upload (use a separate timeout on `fetch`).
+ *
+ * @param wallDeadlineAt - If null, no wall-clock abort while reading (only idleMs applies).
  */
-function createStreamReadAbort(deadlineAt: number, idleMs: number) {
+function createStreamReadAbort(wallDeadlineAt: number | null, idleMs: number) {
   const ctrl = new AbortController();
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   const clearIdle = () => {
@@ -86,13 +94,18 @@ function createStreamReadAbort(deadlineAt: number, idleMs: number) {
     idleTimer = setTimeout(() => ctrl.abort(), idleMs);
   };
   bump();
-  const totalTimer = setTimeout(
-    () => ctrl.abort(),
-    Math.max(30_000, deadlineAt - performance.now())
-  );
+  let totalTimer: ReturnType<typeof setTimeout> | undefined;
+  if (wallDeadlineAt != null) {
+    totalTimer = setTimeout(
+      () => ctrl.abort(),
+      Math.max(30_000, wallDeadlineAt - performance.now())
+    );
+  }
   const dispose = () => {
     clearIdle();
-    clearTimeout(totalTimer);
+    if (totalTimer !== undefined) {
+      clearTimeout(totalTimer);
+    }
   };
   return { signal: ctrl.signal, bump, dispose };
 }
@@ -410,11 +423,14 @@ export const api = {
         dpi?: number;
         high_accuracy?: boolean;
         two_stage?: boolean;
+        /** If true, do not cap upload + stream read by the usual client wall clock (host/network may still limit). */
+        disableClientTimeout?: boolean;
         onProgress?: (completed: number, total: number) => void;
       }
     ): Promise<ExtractionAnalyzeResponse> {
       const token = await getToken();
       const maxPages = opts?.max_pages ?? 24;
+      const noClientTimeout = opts?.disableClientTimeout === true;
 
       /** Cheap GET before large upload — reduces “Failed to fetch” when Render is asleep. */
       if (isLikelyColdStartHost()) {
@@ -443,21 +459,23 @@ export const api = {
           two_stage: opts?.two_stage,
         });
         streamStartedAt = performance.now();
-        const fetchSignal = AbortSignal.timeout(maxTotalMs);
+        const fetchInit: RequestInit = {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: fd,
+        };
+        if (!noClientTimeout) {
+          fetchInit.signal = AbortSignal.timeout(maxTotalMs);
+        }
         try {
-          res = await fetch(requestUrl("/extraction/analyze-stream"), {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            body: fd,
-            signal: fetchSignal,
-          });
+          res = await fetch(requestUrl("/extraction/analyze-stream"), fetchInit);
           break;
         } catch (e) {
-          if (isLikelyTimeoutAbort(e)) {
+          if (!noClientTimeout && isLikelyTimeoutAbort(e)) {
             throw new Error(
-              "Extraction timed out. Try fewer pages, lower “max pages”, or enable direct API URL (see README)."
+              "Extraction timed out. Try fewer pages, lower “max pages”, enable “No browser time limit”, or enable direct API URL (see README)."
             );
           }
           if (!isNetworkFailure(e) || a === streamAttempts - 1) {
@@ -490,8 +508,11 @@ export const api = {
         throw new Error("No response body from extraction stream.");
       }
 
-      const readDeadline = streamStartedAt + maxTotalMs;
-      const readCtrl = createStreamReadAbort(readDeadline, 15 * 60 * 1000);
+      const readWallDeadline = noClientTimeout ? null : streamStartedAt + maxTotalMs;
+      const readIdleMs = noClientTimeout
+        ? EXTRACTION_DISABLED_TIMEOUT_IDLE_MS
+        : 15 * 60 * 1000;
+      const readCtrl = createStreamReadAbort(readWallDeadline, readIdleMs);
       const onReadAbort = () => {
         reader.cancel().catch(() => {});
       };
@@ -687,7 +708,9 @@ export const api = {
           } catch (e) {
             if (isLikelyTimeoutAbort(e)) {
               throw new Error(
-                "Extraction timed out while reading the stream. For large PDFs use High accuracy (higher DPI) only if needed, reduce max pages, or host the API with longer proxy timeouts."
+                noClientTimeout
+                  ? "Extraction stopped after a very long period with no data from the server. The connection or host may have closed; try again or check your API / proxy limits."
+                  : "Extraction timed out while reading the stream. For large PDFs enable “No browser time limit”, reduce max pages, or host the API with longer proxy timeouts."
               );
             }
             const msg = e instanceof Error ? e.message : String(e);
