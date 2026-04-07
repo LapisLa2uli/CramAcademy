@@ -232,7 +232,8 @@ export interface ExtractionCommitBody {
     questions: {
       type: QuestionType;
       content: string;
-      options?: { label: string; text: string }[];
+      question_image_url?: string | null;
+      options?: { label: string; text: string; image_url?: string }[];
       answer: string;
       explanation?: string | null;
       rubric?: Record<string, unknown> | null;

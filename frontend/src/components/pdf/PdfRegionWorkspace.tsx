@@ -25,6 +25,12 @@ const REGION_COLORS: Record<RegionMode, { border: string; bg: string }> = {
   context: { border: "#0891b2", bg: "rgba(8,145,178,0.15)" },
 };
 
+export type ExtraRegionOverlay = {
+  id: string;
+  rect: NormRect;
+  label: string;
+};
+
 interface PdfRegionWorkspaceProps {
   pdf: PDFDocumentProxy;
   pageNumber: number;
@@ -33,6 +39,8 @@ interface PdfRegionWorkspaceProps {
   activeMode: RegionMode | null;
   onRectSet: (mode: RegionMode, rect: NormRect) => void;
   onClear: (mode: RegionMode) => void;
+  /** Read-only boxes (e.g. ordered context fragments on this page). */
+  extraRegions?: ExtraRegionOverlay[];
 }
 
 export default function PdfRegionWorkspace({
@@ -43,6 +51,7 @@ export default function PdfRegionWorkspace({
   activeMode,
   onRectSet,
   onClear,
+  extraRegions,
 }: PdfRegionWorkspaceProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -197,6 +206,24 @@ export default function PdfRegionWorkspace({
               />
             ) : null
         )}
+        {(extraRegions ?? []).map((er) => (
+          <div
+            key={er.id}
+            className="absolute border border-cyan-600 pointer-events-none z-[5]"
+            style={{
+              left: `${er.rect.x * 100}%`,
+              top: `${er.rect.y * 100}%`,
+              width: `${er.rect.w * 100}%`,
+              height: `${er.rect.h * 100}%`,
+              borderColor: REGION_COLORS.context.border,
+              backgroundColor: REGION_COLORS.context.bg,
+            }}
+          >
+            <span className="absolute -top-4 left-0 text-[9px] font-medium px-1 py-0.5 rounded bg-white/95 text-cyan-800 shadow-sm whitespace-nowrap">
+              {er.label}
+            </span>
+          </div>
+        ))}
         {dragPreview && activeMode && (
           <div
             className="absolute border-2 border-dashed border-amber-500 bg-amber-400/15 pointer-events-none z-10"

@@ -53,7 +53,7 @@ export default function ExtractionOverlayCanvas({
           return (
             <div
               key={r.id}
-              className="absolute rounded border-2"
+              className="absolute rounded border"
               style={boxStyle(r.bbox, st)}
             >
               <span

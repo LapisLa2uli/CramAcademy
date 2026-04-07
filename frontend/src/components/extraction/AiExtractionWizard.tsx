@@ -1,15 +1,18 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import { buildExtractionCommitPayload } from "@/lib/extraction/buildExtractionCommitPayload";
+import { cropNormRectToPngBlob } from "@/lib/extraction/cropExtractionImage";
 import type {
   ExtractionAnalyzeResponse,
-  ExtractionCommitBody,
+  ExtractionNormRect,
   ExtractionPage,
   ExtractionSetDraft,
 } from "@/types";
 import SubjectPicker from "@/components/SubjectPicker";
-import ExtractionOverlayCanvas from "./ExtractionOverlayCanvas";
+import ExtractionReviewOverlay from "./ExtractionReviewOverlay";
 
 type Step = "upload" | "analyze" | "review" | "done";
 
@@ -23,23 +26,8 @@ async function pagePngToFile(page: ExtractionPage): Promise<File> {
   });
 }
 
-function defaultFrqRubric(answer: string) {
-  const hint = answer.trim().slice(0, 800);
-  return {
-    criteria: [
-      {
-        name: "Response",
-        expectations: hint
-          ? `Full credit for a complete response consistent with: ${hint}`
-          : "Full credit for a complete, correct response.",
-        points: 1,
-      },
-    ],
-    max_score: 1,
-  };
-}
-
 export default function AiExtractionWizard() {
+  const { user } = useAuth();
   const [step, setStep] = useState<Step>("upload");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -62,6 +50,10 @@ export default function AiExtractionWizard() {
   const [noBrowserTimeLimit, setNoBrowserTimeLimit] = useState(false);
   const [regenBusy, setRegenBusy] = useState(false);
   const [pageRegenHint, setPageRegenHint] = useState<string | null>(null);
+  const [bboxOverrides, setBboxOverrides] = useState<Record<string, ExtractionNormRect>>({});
+  const [cropPreviews, setCropPreviews] = useState<Record<string, string>>({});
+  const cropPreviewsRef = useRef<Record<string, string>>({});
+  cropPreviewsRef.current = cropPreviews;
 
   const pages: ExtractionPage[] = data?.pages ?? [];
   const currentPage = pages[pageIdx] ?? null;
@@ -88,6 +80,7 @@ export default function AiExtractionWizard() {
       });
       setData(res);
       setEditableSets(structuredClone(res.sets));
+      setBboxOverrides({});
       setPageIdx(0);
       setPageRegenHint(null);
       setStep("review");
@@ -162,50 +155,93 @@ export default function AiExtractionWizard() {
     });
   }, []);
 
-  const commitPayload = useMemo((): ExtractionCommitBody | null => {
-    if (!subjectName.trim()) return null;
-    return {
-      subject: subjectName.trim(),
-      ...(subjectId ? { subject_id: subjectId } : {}),
-      ...(courseLevel ? { course_level: courseLevel } : {}),
-      ...(gradeLevel !== "" ? { grade_level: Number(gradeLevel) } : {}),
-      tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-      sets: editableSets
-        .filter((s) => s.questions.length > 0)
-        .map((s) => ({
-          context_text: s.context_text || "",
-          questions: s.questions.map((q) => {
-            let rubric = q.rubric ?? undefined;
-            if (q.type === "frq" && !rubric) {
-              rubric = defaultFrqRubric(q.answer);
+  const canCommit = useMemo(() => {
+    if (!subjectName.trim() || !data) return false;
+    return editableSets.some((s) => s.questions.length > 0);
+  }, [subjectName, editableSets, data]);
+
+  useEffect(() => {
+    if (step !== "review" || !currentPage) return;
+    const page = currentPage;
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      void (async () => {
+        const next: Record<string, string> = {};
+        try {
+          for (const r of page.regions) {
+            if (r.role !== "context" && r.role !== "question_stem" && r.role !== "choice") {
+              continue;
             }
-            const latex =
-              (q.content || "").includes("$") ||
-              (q.explanation || "").includes("$") ||
-              (q.options || []).some((o) => o.text.includes("$"));
-            return {
-              type: q.type,
-              content: q.content,
-              options: q.type === "mcq" ? q.options : undefined,
-              answer: q.answer,
-              explanation: q.explanation || undefined,
-              rubric,
-              latex_enabled: latex,
-            };
-          }),
-        })),
+            const bb = bboxOverrides[r.id] ?? r.bbox;
+            const blob = await cropNormRectToPngBlob(
+              page.image_base64,
+              bb,
+              page.width_px,
+              page.height_px
+            );
+            if (cancelled) {
+              Object.values(next).forEach((u) => URL.revokeObjectURL(u));
+              return;
+            }
+            next[r.id] = URL.createObjectURL(blob);
+          }
+          if (cancelled) {
+            Object.values(next).forEach((u) => URL.revokeObjectURL(u));
+            return;
+          }
+          setCropPreviews((prev) => {
+            for (const u of Object.values(prev)) URL.revokeObjectURL(u);
+            return next;
+          });
+        } catch {
+          if (cancelled) return;
+          setCropPreviews((prev) => {
+            for (const u of Object.values(prev)) URL.revokeObjectURL(u);
+            return {};
+          });
+        }
+      })();
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
     };
-  }, [subjectName, subjectId, courseLevel, gradeLevel, tags, editableSets]);
+  }, [step, currentPage, bboxOverrides]);
+
+  useEffect(() => {
+    return () => {
+      for (const u of Object.values(cropPreviewsRef.current)) URL.revokeObjectURL(u);
+    };
+  }, []);
 
   const doCommit = async () => {
-    if (!commitPayload || commitPayload.sets.length === 0) {
+    if (!user?.id) {
+      setErr("You must be signed in to save.");
+      return;
+    }
+    if (!data || !canCommit) {
       setErr("Select a subject and ensure at least one question set has questions.");
       return;
     }
     setErr(null);
     setBusy(true);
     try {
-      await api.extraction.commit(commitPayload);
+      const payload = await buildExtractionCommitPayload({
+        userId: user.id,
+        data,
+        editableSets,
+        bboxOverrides,
+        subject: subjectName.trim(),
+        subject_id: subjectId || undefined,
+        course_level: courseLevel || undefined,
+        grade_level: gradeLevel === "" ? undefined : Number(gradeLevel),
+        tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+      });
+      if (payload.sets.length === 0) {
+        setErr("No question sets with questions to save.");
+        return;
+      }
+      await api.extraction.commit(payload);
       setStep("done");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Commit failed.");
@@ -388,10 +424,38 @@ export default function AiExtractionWizard() {
                 </p>
               )}
               {currentPage ? (
-                <ExtractionOverlayCanvas
-                  imageBase64={currentPage.image_base64}
-                  regions={currentPage.regions}
-                />
+                <>
+                  <ExtractionReviewOverlay
+                    imageBase64={currentPage.image_base64}
+                    regions={currentPage.regions}
+                    bboxOverrides={bboxOverrides}
+                    onRegionBboxChange={(regionId, next) =>
+                      setBboxOverrides((prev) => ({ ...prev, [regionId]: next }))
+                    }
+                  />
+                  {Object.keys(cropPreviews).length > 0 && (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+                      <p className="text-xs font-medium text-gray-700">Crop preview (debounced)</p>
+                      <div className="flex flex-wrap gap-3 max-h-48 overflow-y-auto">
+                        {currentPage.regions
+                          .filter((r) => cropPreviews[r.id])
+                          .map((r) => (
+                            <div key={r.id} className="flex flex-col gap-1 max-w-[140px]">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={cropPreviews[r.id]}
+                                alt=""
+                                className="rounded border border-gray-200 max-h-24 w-auto object-contain bg-white"
+                              />
+                              <span className="text-[10px] text-gray-600 truncate" title={r.label}>
+                                {r.role} · {r.label}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="text-gray-500 text-sm">No page bitmaps returned.</p>
               )}
@@ -534,7 +598,7 @@ export default function AiExtractionWizard() {
                 <button
                   type="button"
                   className="btn-primary"
-                  disabled={busy || !subjectName.trim()}
+                  disabled={busy || !canCommit || !user?.id}
                   onClick={() => void doCommit()}
                 >
                   {busy ? "Saving…" : "Commit to my bank"}

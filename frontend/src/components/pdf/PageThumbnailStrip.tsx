@@ -16,6 +16,8 @@ interface PageThumbnailStripProps {
   onSelectPage: (page: number) => void;
   /** Page-keyed rects: pageNum -> regions */
   pageRects: Record<number, Partial<Record<RegionMode, NormRect>>>;
+  /** Optional: number of context passage boxes drawn on each page (multi-box context). */
+  contextBoxCountByPage?: Record<number, number>;
 }
 
 export default function PageThumbnailStrip({
@@ -25,6 +27,7 @@ export default function PageThumbnailStrip({
   currentPage,
   onSelectPage,
   pageRects,
+  contextBoxCountByPage,
 }: PageThumbnailStripProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -41,6 +44,7 @@ export default function PageThumbnailStrip({
           const active = pageNum === currentPage;
           const rects = pageRects[pageNum];
           const regionModes = rects ? (Object.keys(rects) as RegionMode[]) : [];
+          const ctxCount = contextBoxCountByPage?.[pageNum] ?? 0;
 
           return (
             <button
@@ -72,8 +76,17 @@ export default function PageThumbnailStrip({
               </span>
 
               {/* Region indicator dots */}
-              {regionModes.length > 0 && (
-                <div className="absolute top-0.5 left-0.5 flex gap-0.5">
+              {(regionModes.length > 0 || ctxCount > 0) && (
+                <div className="absolute top-0.5 left-0.5 flex flex-wrap gap-0.5 max-w-[90%]">
+                  {ctxCount > 0 &&
+                    Array.from({ length: Math.min(ctxCount, 6) }, (_, i) => (
+                      <span
+                        key={`ctx-${i}`}
+                        className="w-2.5 h-2.5 rounded-full border border-white"
+                        style={{ backgroundColor: REGION_COLORS.context.border }}
+                        title={`${ctxCount} context box(es) on this page`}
+                      />
+                    ))}
                   {regionModes.map((mode) => (
                     <span
                       key={mode}

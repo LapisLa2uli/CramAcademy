@@ -2,7 +2,12 @@
 
 import { useRef, useState, useCallback } from "react";
 import { type NormRect, clampNormRect } from "@/lib/cropImageRegion";
-import { type RegionMode, MODE_LABELS, REGION_COLORS } from "./PdfRegionWorkspace";
+import {
+  type RegionMode,
+  MODE_LABELS,
+  REGION_COLORS,
+  type ExtraRegionOverlay,
+} from "./PdfRegionWorkspace";
 
 interface ImageRegionWorkspaceProps {
   src: string;
@@ -11,6 +16,7 @@ interface ImageRegionWorkspaceProps {
   onRectSet: (mode: RegionMode, rect: NormRect) => void;
   onClear: (mode: RegionMode) => void;
   onImgRef?: (el: HTMLImageElement | null) => void;
+  extraRegions?: ExtraRegionOverlay[];
 }
 
 export default function ImageRegionWorkspace({
@@ -20,6 +26,7 @@ export default function ImageRegionWorkspace({
   onRectSet,
   onClear,
   onImgRef,
+  extraRegions,
 }: ImageRegionWorkspaceProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{
@@ -113,6 +120,24 @@ export default function ImageRegionWorkspace({
               />
             ) : null
         )}
+        {(extraRegions ?? []).map((er) => (
+          <div
+            key={er.id}
+            className="absolute border border-cyan-600 pointer-events-none z-[5]"
+            style={{
+              left: `${er.rect.x * 100}%`,
+              top: `${er.rect.y * 100}%`,
+              width: `${er.rect.w * 100}%`,
+              height: `${er.rect.h * 100}%`,
+              borderColor: REGION_COLORS.context.border,
+              backgroundColor: REGION_COLORS.context.bg,
+            }}
+          >
+            <span className="absolute -top-4 left-0 text-[9px] font-medium px-1 py-0.5 rounded bg-white/95 text-cyan-800 shadow-sm whitespace-nowrap">
+              {er.label}
+            </span>
+          </div>
+        ))}
 
         {dragPreview && activeMode && (
           <div

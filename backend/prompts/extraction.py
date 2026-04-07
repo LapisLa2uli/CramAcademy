@@ -40,7 +40,9 @@ Rules:
 - bbox uses normalized coordinates: origin top-left, x,y width height all 0-1 relative to this page image.
 - **Do not invent** questions, options, or answers. If text is unreadable, use empty string and confidence under 0.5.
 - **Reading order**: top-to-bottom; for two-column pages, finish the left column then the right column.
-- Transcribe all visible text for MCQ stems, choices, answer keys, and explanations.
+- **LaTeX math**: Transcribe formulas with inline `$...$` or `\\(...\\)` and display `$$...$$` or `\\[...\\]` exactly as layout suggests (fractions, superscripts, Greek letters). Do not invent math not visible on the page.
+- **Figures / graphs / hybrid**: If a stem, choice, or context block is mostly non-text (graph, diagram, table as image, or mixed text+figure where text alone would be misleading), set `questions[].content` to empty string **or** start it with the literal prefix `[[HYBRID]]` on the first line when some text should stay (remaining lines = text). For pure figure stems use empty `content` and a tight `question_stem` bbox around the figure. Same for choices: empty `text` when the option is purely visual; use a `choice` region bbox. For shared passage figures use `context` regions and `context_text` empty or `[[HYBRID]]` plus text.
+- Transcribe all visible text for MCQ stems, choices, answer keys, and explanations when the block is text-dominant.
 - For MCQ, draw a separate **choice** region per option (A–D) when layout allows; include 4 options in `questions[].options` when present.
 - If a passage applies to multiple questions, use one set with context_text + multiple questions.
 - If the page has unrelated standalone questions, use separate set_index values (0,1,2...) on this page.
@@ -60,7 +62,7 @@ LAYOUT_ONLY_SYSTEM = """You locate exam content on one page image. Return ONLY v
 Use roles: context, shared_stem, question_stem, choice, answer_key, explanation, frq_prompt, other.
 Do not output "sets". Focus on accurate boxes and reading order. No markdown."""
 
-LAYOUT_ONLY_USER = """Page index: {page_index}. Draw tight bounding boxes for every distinct exam block."""
+LAYOUT_ONLY_USER = """Page index: {page_index}. Draw tight bounding boxes for every distinct exam block (no minimum width — boxes should hug text, figures, and columns)."""
 
 FIX_OUTPUT_SYSTEM = """You fix a previous JSON extraction for one exam page. The prior output had validation problems.
 Return ONLY the same JSON shape as the original task: object with "regions" and "sets" arrays (full schema).

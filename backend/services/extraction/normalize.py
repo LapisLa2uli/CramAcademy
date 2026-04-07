@@ -88,8 +88,10 @@ def _norm_bbox(raw: dict[str, Any] | None) -> NormRect:
     y = _clamp01(_coerce_float(raw.get("y"), 0.0))
     w = _coerce_float(raw.get("w"), 0.1)
     h = _coerce_float(raw.get("h"), 0.1)
-    w = max(0.01, min(1.0 - x, w))
-    h = max(0.01, min(1.0 - y, h))
+    # Keep a small floor without inflating thin columns (0.01 was ~1% page width).
+    _min = 0.002
+    w = max(_min, min(1.0 - x, w))
+    h = max(_min, min(1.0 - y, h))
     return NormRect(x=x, y=y, w=w, h=h)
 
 

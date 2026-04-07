@@ -238,6 +238,7 @@ async def extraction_commit(
                 course_level=body.course_level,
                 grade_level=body.grade_level,
                 content=item.content or "",
+                question_image_url=item.question_image_url,
                 latex_enabled=item.latex_enabled,
                 options=opts if item.type == "mcq" else None,
                 answer=ans,

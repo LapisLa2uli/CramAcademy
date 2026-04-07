@@ -199,9 +199,9 @@ export default function QuestionRenderer({
       <div className="flex flex-col h-full">
         {questionHeader}
 
-        <div className="flex flex-col md:flex-row gap-6 ml-0 md:ml-12 mt-4 flex-1 min-h-0">
-          {/* Left panel: context / passage / image */}
-          <div className="w-full md:w-1/2 md:overflow-y-auto space-y-4 pr-2">
+        <div className="flex flex-col md:flex-row gap-6 ml-0 md:ml-12 mt-4 flex-1 min-h-0 items-start">
+          {/* Left panel: content-sized (not forced 50/50); passage keeps natural image aspect */}
+          <div className="w-full md:w-auto md:max-w-[min(100%,42rem)] md:shrink-0 md:overflow-y-auto space-y-4 pr-2">
             {contextImageUrl && (
               <div className="w-fit max-w-full">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -247,7 +247,7 @@ export default function QuestionRenderer({
           </div>
 
           {/* Right panel: question stem (if context mode) + choices/answer */}
-          <div className="w-full md:w-1/2 md:overflow-y-auto space-y-4">
+          <div className="w-full min-w-0 flex-1 md:overflow-y-auto space-y-4">
             {/* Show question stem on right when context is on left */}
             {(contextText || contextImageUrl) && question.content?.trim() && (
               question.latex_enabled ? (

@@ -74,6 +74,7 @@ class ExtractionAnalyzeResponse(BaseModel):
 class CommitQuestionItem(BaseModel):
     type: Literal["mcq", "frq"]
     content: str = ""
+    question_image_url: Optional[str] = None
     options: Optional[list[dict]] = None
     answer: str
     explanation: Optional[str] = None

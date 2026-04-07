@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { api } from "@/lib/api";
 import { uploadQuestionImage } from "@/lib/questionImageUpload";
@@ -10,7 +10,9 @@ import PdfRegionWorkspace, {
   type RegionMode,
   MODE_LABELS,
   REGION_COLORS,
+  type ExtraRegionOverlay,
 } from "./PdfRegionWorkspace";
+import { compositePngBlobsVertical } from "@/lib/pdf/compositeContextCrops";
 import ImageRegionWorkspace from "./ImageRegionWorkspace";
 import PageThumbnailStrip from "./PageThumbnailStrip";
 import RubricTableEditor, {
@@ -36,6 +38,8 @@ type QueuedQuestion = {
 
 type PageRects = Record<number, Partial<Record<RegionMode, NormRect>>>;
 
+type ContextFragment = { id: string; pageNum: number; rect: NormRect };
+
 interface Props {
   userId: string;
 }
@@ -53,8 +57,8 @@ export default function PdfQuestionSetFromPdfPanel({ userId }: Props) {
   // --- Phase ---
   const [phase, setPhase] = useState<"context" | "questions">("context");
 
-  // --- Context region (Phase 1) ---
-  const [contextPageRects, setContextPageRects] = useState<PageRects>({});
+  // --- Context regions (Phase 1): ordered list; selection order = composite order ---
+  const [contextFragments, setContextFragments] = useState<ContextFragment[]>([]);
   const [contextText, setContextText] = useState("");
 
   // --- Per-question regions (Phase 2) ---
@@ -98,7 +102,7 @@ export default function PdfQuestionSetFromPdfPanel({ userId }: Props) {
     setImagePages([]);
     imgElsRef.current.clear();
     setNumPages(0);
-    setContextPageRects({});
+    setContextFragments([]);
     setPageRects({});
     setPhase("context");
     setQueue([]);
@@ -144,24 +148,32 @@ export default function PdfQuestionSetFromPdfPanel({ userId }: Props) {
   };
 
   // --- Region helpers ---
-  const setContextRect = useCallback((mode: RegionMode, rect: NormRect) => {
-    if (mode !== "context") return;
-    setContextPageRects((prev) => ({
+  const appendContextFragment = useCallback((rect: NormRect) => {
+    setContextFragments((prev) => [
       ...prev,
-      [page]: { ...(prev[page] || {}), context: rect },
-    }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+      { id: crypto.randomUUID(), pageNum: page, rect },
+    ]);
   }, [page]);
 
-  const clearContextRect = useCallback((mode: RegionMode) => {
-    if (mode !== "context") return;
-    setContextPageRects((prev) => {
-      const pageR = { ...(prev[page] || {}) };
-      delete pageR.context;
-      return { ...prev, [page]: pageR };
+  const removeContextFragment = useCallback((id: string) => {
+    setContextFragments((prev) => prev.filter((f) => f.id !== id));
+  }, []);
+
+  const moveContextFragment = useCallback((id: string, dir: -1 | 1) => {
+    setContextFragments((prev) => {
+      const i = prev.findIndex((f) => f.id === id);
+      if (i < 0) return prev;
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, []);
+
+  const clearAllContextFragments = useCallback(() => {
+    setContextFragments([]);
+  }, []);
 
   const setQuestionRect = useCallback((mode: RegionMode, rect: NormRect) => {
     if (mode === "context") return;
@@ -181,6 +193,27 @@ export default function PdfQuestionSetFromPdfPanel({ userId }: Props) {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
+
+  const handleWorkspaceRectSet = useCallback(
+    (mode: RegionMode, rect: NormRect) => {
+      if (phase === "context" && mode === "context") {
+        appendContextFragment(rect);
+        return;
+      }
+      if (phase === "questions" && mode !== "context") {
+        setQuestionRect(mode, rect);
+      }
+    },
+    [phase, appendContextFragment, setQuestionRect]
+  );
+
+  const handleWorkspaceClear = useCallback(
+    (mode: RegionMode) => {
+      if (phase === "context") return;
+      clearQuestionRect(mode);
+    },
+    [phase, clearQuestionRect]
+  );
 
   const resetQuestionRegions = () => {
     setPageRects({});
@@ -217,13 +250,32 @@ export default function PdfQuestionSetFromPdfPanel({ userId }: Props) {
   };
 
   const findQuestionRegion = (mode: RegionMode) => findRegionIn(pageRects, mode);
-  const contextRegion = findRegionIn(contextPageRects, "context");
+
+  const contextBoxCountByPage = useMemo(() => {
+    const m: Record<number, number> = {};
+    for (const f of contextFragments) {
+      m[f.pageNum] = (m[f.pageNum] ?? 0) + 1;
+    }
+    return m;
+  }, [contextFragments]);
+
+  const contextExtraForPage = useMemo((): ExtraRegionOverlay[] => {
+    return contextFragments
+      .map((f, i) => ({ f, ord: i + 1 }))
+      .filter(({ f }) => f.pageNum === page)
+      .map(({ f, ord }) => ({
+        id: f.id,
+        rect: f.rect,
+        label: `Context ${ord}`,
+      }));
+  }, [contextFragments, page]);
 
   // All drawn modes for summary badges
   const allDrawnModes = (): { mode: RegionMode; page: number }[] => {
     const items: { mode: RegionMode; page: number }[] = [];
-    // Context
-    if (contextRegion) items.push({ mode: "context", page: contextRegion.pageNum });
+    for (const f of contextFragments) {
+      items.push({ mode: "context", page: f.pageNum });
+    }
     // Question regions
     for (const [pStr, rects] of Object.entries(pageRects)) {
       for (const m of Object.keys(rects) as RegionMode[]) {
@@ -233,29 +285,19 @@ export default function PdfQuestionSetFromPdfPanel({ userId }: Props) {
     return items;
   };
 
-  // --- Merged rects for workspace (show context + current question regions) ---
-  const mergedCurrentPageRects: Partial<Record<RegionMode, NormRect>> = {
-    ...(contextPageRects[page] || {}),
-    ...(pageRects[page] || {}),
-  };
+  // Question-phase workspace: only question rects; context shown via extraRegions
+  const mergedCurrentPageRects: Partial<Record<RegionMode, NormRect>> =
+    phase === "context" ? {} : { ...(pageRects[page] || {}) };
 
-  // Merged rects for thumbnail strip
-  const mergedAllPageRects: PageRects = {};
-  const allPages = new Set([
-    ...Object.keys(contextPageRects).map(Number),
-    ...Object.keys(pageRects).map(Number),
-  ]);
-  for (const p of allPages) {
-    mergedAllPageRects[p] = {
-      ...(contextPageRects[p] || {}),
-      ...(pageRects[p] || {}),
-    };
-  }
+  // Thumbnails: question rects only (context counts via contextBoxCountByPage)
+  const mergedAllPageRects: PageRects = { ...pageRects };
 
   // --- Phase 1: Confirm context ---
   const confirmContext = () => {
-    if (!contextRegion && !contextText.trim()) {
-      setMsg("Draw a context region on the page and/or enter context text before proceeding.");
+    if (contextFragments.length === 0 && !contextText.trim()) {
+      setMsg(
+        "Draw one or more context boxes (in order) and/or enter context text before proceeding."
+      );
       return;
     }
     setMsg(null);
@@ -368,9 +410,15 @@ export default function PdfQuestionSetFromPdfPanel({ userId }: Props) {
     try {
       // 1. Crop & upload context image if drawn
       let context_image_url: string | undefined;
-      if (contextRegion) {
-        const blob = await cropRegion(contextRegion.rect, contextRegion.pageNum);
-        const file = new File([blob], "context.png", { type: "image/png" });
+      if (contextFragments.length > 0) {
+        const sorted = [...contextFragments];
+        const blobs: Blob[] = [];
+        for (const frag of sorted) {
+          blobs.push(await cropRegion(frag.rect, frag.pageNum));
+        }
+        const composite =
+          blobs.length === 1 ? blobs[0] : await compositePngBlobsVertical(blobs);
+        const file = new File([composite], "context.png", { type: "image/png" });
         context_image_url = await uploadQuestionImage(userId, file);
       }
 
@@ -423,8 +471,8 @@ export default function PdfQuestionSetFromPdfPanel({ userId }: Props) {
       <div>
         <h2 className="text-xl font-semibold text-gray-800">Create a Question Set from PDF / Images</h2>
         <p className="text-sm text-gray-500 mt-1">
-          Upload a PDF or images. First, draw a box around the shared context (passage / figure).
-          Then add individual questions by drawing their stems and choices.
+          Upload a PDF or images. First, draw one or more context boxes in reading order (each drag
+          adds a box; reorder in the list below). Then add questions by drawing stems and choices.
         </p>
       </div>
 
@@ -502,7 +550,8 @@ export default function PdfQuestionSetFromPdfPanel({ userId }: Props) {
       {phase === "context" && (
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-700">
-            Context text <span className="text-gray-400">(optional, accompanies the cropped region)</span>
+            Context text{" "}
+            <span className="text-gray-400">(optional, accompanies the cropped region(s))</span>
           </label>
           <LatexHoverPreview value={contextText}>
             <textarea
@@ -524,6 +573,7 @@ export default function PdfQuestionSetFromPdfPanel({ userId }: Props) {
           currentPage={page}
           onSelectPage={setPage}
           pageRects={mergedAllPageRects}
+          contextBoxCountByPage={contextBoxCountByPage}
         />
       )}
 
@@ -578,9 +628,9 @@ export default function PdfQuestionSetFromPdfPanel({ userId }: Props) {
           {/* Region location summary */}
           {regionSummary.length > 0 && (
             <div className="flex flex-wrap gap-2 text-xs">
-              {regionSummary.map(({ mode, page: p }) => (
+              {regionSummary.map(({ mode, page: p }, idx) => (
                 <span
-                  key={`${mode}-${p}`}
+                  key={`${mode}-${p}-${idx}`}
                   className="inline-flex items-center gap-1 px-2 py-1 rounded-full border"
                   style={{
                     borderColor: REGION_COLORS[mode]?.border ?? "#666",
@@ -601,7 +651,69 @@ export default function PdfQuestionSetFromPdfPanel({ userId }: Props) {
           {drawMode && (
             <p className="text-sm text-amber-800 bg-amber-50 rounded-lg px-3 py-2">
               Drag on the page to draw a box for: <strong>{MODE_LABELS[drawMode]}</strong>
+              {phase === "context" && (
+                <span className="block mt-1 text-amber-900/90">
+                  Each completed drag adds a new context region (order = top of list first in the
+                  saved image).
+                </span>
+              )}
             </p>
+          )}
+
+          {phase === "context" && contextFragments.length > 0 && (
+            <div className="rounded-lg border border-cyan-200 bg-cyan-50/60 p-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm font-medium text-cyan-900">Context boxes (order)</span>
+                <button
+                  type="button"
+                  className="text-xs text-red-700 hover:underline"
+                  onClick={clearAllContextFragments}
+                >
+                  Clear all
+                </button>
+              </div>
+              <ul className="text-sm space-y-1.5">
+                {contextFragments.map((f, i) => (
+                  <li
+                    key={f.id}
+                    className="flex flex-wrap items-center gap-2 bg-white/80 rounded px-2 py-1 border border-cyan-100"
+                  >
+                    <span className="font-mono text-cyan-800 w-8">{i + 1}.</span>
+                    <span className="text-gray-700">Page {f.pageNum}</span>
+                    <span className="text-xs text-gray-500">
+                      ({(f.rect.w * 100).toFixed(1)}% × {(f.rect.h * 100).toFixed(1)}%)
+                    </span>
+                    <div className="flex gap-1 ml-auto">
+                      <button
+                        type="button"
+                        className="btn-secondary text-xs py-0.5 px-2"
+                        disabled={i === 0}
+                        onClick={() => moveContextFragment(f.id, -1)}
+                        title="Move earlier"
+                      >
+                        Up
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary text-xs py-0.5 px-2"
+                        disabled={i === contextFragments.length - 1}
+                        onClick={() => moveContextFragment(f.id, 1)}
+                        title="Move later"
+                      >
+                        Down
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xs text-red-600 hover:underline px-2"
+                        onClick={() => removeContextFragment(f.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {pdf ? (
@@ -611,16 +723,18 @@ export default function PdfQuestionSetFromPdfPanel({ userId }: Props) {
               scale={viewScale}
               rects={mergedCurrentPageRects}
               activeMode={drawMode}
-              onRectSet={phase === "context" ? setContextRect : setQuestionRect}
-              onClear={phase === "context" ? clearContextRect : clearQuestionRect}
+              onRectSet={handleWorkspaceRectSet}
+              onClear={handleWorkspaceClear}
+              extraRegions={contextExtraForPage}
             />
           ) : imagePages.length > 0 ? (
             <ImageRegionWorkspace
               src={imagePages[page - 1]}
               rects={mergedCurrentPageRects}
               activeMode={drawMode}
-              onRectSet={phase === "context" ? setContextRect : setQuestionRect}
-              onClear={phase === "context" ? clearContextRect : clearQuestionRect}
+              onRectSet={handleWorkspaceRectSet}
+              onClear={handleWorkspaceClear}
+              extraRegions={contextExtraForPage}
               onImgRef={(el) => {
                 if (el) imgElsRef.current.set(page, el);
               }}
