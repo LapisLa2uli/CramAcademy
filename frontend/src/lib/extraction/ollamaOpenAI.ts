@@ -20,7 +20,7 @@ function formatOllamaFetchError(e: unknown, baseUrl: string): string {
       "Cannot reach Ollama: pages served over HTTPS cannot call http:// URLs (browser mixed-content blocking). " +
       "Run the app locally at http://localhost:3000 for AI extract with local Ollama, " +
       "or terminate HTTPS to your machine with a tunnel/proxy that exposes Ollama over HTTPS. " +
-      "See README and docs/nginx-ollama-proxy.conf."
+      "See README, docs/nginx-ollama-proxy.conf (HTTP), and docs/nginx-ollama-proxy-https.conf (HTTPS)."
     );
   }
 

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "ollama-https-proxy": "node ../scripts/ollama-https-proxy.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.0",
