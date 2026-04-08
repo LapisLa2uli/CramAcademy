@@ -2,6 +2,35 @@
  * Minimal OpenAI-compatible chat client for browser → local Ollama.
  */
 
+/** True when the deployed HTTPS app cannot call http:// Ollama (browser mixed-content policy). */
+export function localOllamaBlockedFromHttpsPage(baseUrl: string): boolean {
+  if (typeof window === "undefined") return false;
+  const b = baseUrl.trim().toLowerCase();
+  return window.location.protocol === "https:" && b.startsWith("http:");
+}
+
+function formatOllamaFetchError(e: unknown, baseUrl: string): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  const isFailedFetch =
+    msg === "Failed to fetch" || msg.includes("NetworkError") || msg.includes("Load failed");
+  if (!isFailedFetch) return msg;
+
+  if (typeof window !== "undefined" && window.location.protocol === "https:" && baseUrl.trim().toLowerCase().startsWith("http:")) {
+    return (
+      "Cannot reach Ollama: pages served over HTTPS cannot call http:// URLs (browser mixed-content blocking). " +
+      "Run the app locally at http://localhost:3000 for AI extract with local Ollama, " +
+      "or terminate HTTPS to your machine with a tunnel/proxy that exposes Ollama over HTTPS. " +
+      "See README and docs/nginx-ollama-proxy.conf."
+    );
+  }
+
+  return (
+    `Failed to reach Ollama at ${baseUrl}. ` +
+    "Ensure Ollama is running (`ollama serve`), NEXT_PUBLIC_OLLAMA_BASE_URL matches (e.g. http://127.0.0.1:11434), " +
+    "and CORS allows this origin. If you use http://localhost:3000 but Ollama is on 127.0.0.1, configure Ollama or nginx CORS for http://localhost:3000."
+  );
+}
+
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
   content:
@@ -39,12 +68,17 @@ export async function ollamaChatCompletion(params: {
     signal = AbortSignal.any([params.signal, timeoutSig]);
   }
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (e) {
+    throw new Error(formatOllamaFetchError(e, params.baseUrl));
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);

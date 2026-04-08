@@ -25,6 +25,7 @@ import {
   getLocalOllamaConfig,
   isClientOllamaExtractionEnabled,
 } from "@/lib/extraction/localOllamaAnalyze";
+import { localOllamaBlockedFromHttpsPage } from "@/lib/extraction/ollamaOpenAI";
 
 type Step = "upload" | "analyze" | "review" | "done";
 type ExtractionMode = "full" | "layout";
@@ -80,6 +81,11 @@ export default function AiExtractionWizard() {
     if (!isClientOllamaExtractionEnabled()) return null;
     return getLocalOllamaConfig();
   }, []);
+
+  const localOllamaHttpsBlocked = useMemo(() => {
+    if (!localOllamaInfo) return false;
+    return localOllamaBlockedFromHttpsPage(localOllamaInfo.baseUrl);
+  }, [localOllamaInfo]);
 
   const handleSlotAssign = useCallback(
     (slotId: string, regionId: string) => {
@@ -404,17 +410,31 @@ export default function AiExtractionWizard() {
       {step === "upload" && (
         <div className="card p-6 space-y-4">
           {localOllamaInfo ? (
-            <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
-              <p className="font-medium">Local Ollama extraction</p>
-              <p className="text-sky-900/90 mt-1">
-                Pages are analyzed in your browser at{" "}
-                <code className="text-xs bg-white/80 px-1 rounded">{localOllamaInfo.baseUrl}</code>{" "}
-                (model <code className="text-xs bg-white/80 px-1 rounded">{localOllamaInfo.model}</code>
-                ). Install Ollama, pull that model, and allow your app origin in Ollama CORS so the
-                browser can reach localhost. Saving to your bank still uses the API (
-                <code className="text-xs bg-white/80 px-1 rounded">POST /extraction/commit</code>
-                ).
-              </p>
+            <div className="space-y-2">
+              {localOllamaHttpsBlocked ? (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                  <p className="font-medium">Local Ollama will not work on this HTTPS page</p>
+                  <p className="mt-1 text-amber-900/95">
+                    Browsers block <code className="text-xs">http://</code> calls to Ollama from an{" "}
+                    <code className="text-xs">https://</code> site (mixed content). Use{" "}
+                    <strong>http://localhost:3000</strong> with <code className="text-xs">next dev</code>, or
+                    expose Ollama through HTTPS (e.g. tunnel or nginx with TLS). See{" "}
+                    <code className="text-xs">docs/nginx-ollama-proxy.conf</code> and the README.
+                  </p>
+                </div>
+              ) : null}
+              <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
+                <p className="font-medium">Local Ollama extraction</p>
+                <p className="text-sky-900/90 mt-1">
+                  Pages are analyzed in your browser at{" "}
+                  <code className="text-xs bg-white/80 px-1 rounded">{localOllamaInfo.baseUrl}</code>{" "}
+                  (model <code className="text-xs bg-white/80 px-1 rounded">{localOllamaInfo.model}</code>
+                  ). Install Ollama, pull that model, and allow your app origin in Ollama CORS (or use
+                  nginx) so the browser can reach localhost. Saving to your bank still uses the API (
+                  <code className="text-xs bg-white/80 px-1 rounded">POST /extraction/commit</code>
+                  ).
+                </p>
+              </div>
             </div>
           ) : null}
           <input
