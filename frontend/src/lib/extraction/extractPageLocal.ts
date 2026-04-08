@@ -213,6 +213,8 @@ export async function extractPageLocal(params: {
   twoStage: boolean;
   layoutOnly: boolean;
   signal?: AbortSignal;
+  /** Fires after each finished Ollama call (layout / main / fix) so the UI can advance during long inference. */
+  onVisionSubstep?: () => void;
 }): Promise<{ data: Record<string, unknown>; warnings: string[] }> {
   const warnings: string[] = [];
   const dataUrl = pngToDataUrl(params.pngBytes);
@@ -234,6 +236,7 @@ export async function extractPageLocal(params: {
         dataUrl,
         LAYOUT_SCHEMA_FORMAT
       );
+      params.onVisionSubstep?.();
       let regions: unknown[] = [];
       if (layoutJson && Array.isArray(layoutJson.regions)) {
         regions = layoutJson.regions;
@@ -264,6 +267,7 @@ export async function extractPageLocal(params: {
       );
       layoutJson = null;
     }
+    params.onVisionSubstep?.();
   }
 
   const hintParts: string[] = [];
@@ -293,6 +297,7 @@ export async function extractPageLocal(params: {
       dataUrl,
       FULL_SCHEMA_FORMAT
     );
+    params.onVisionSubstep?.();
   } catch (e) {
     throw new Error(
       `Vision model error on page ${params.pageIndex}: ${e instanceof Error ? e.message : String(e)}`
@@ -333,6 +338,7 @@ export async function extractPageLocal(params: {
         data,
         dataUrl
       );
+      params.onVisionSubstep?.();
       if (fixed && Array.isArray(fixed.sets)) {
         data = fixed;
       } else {

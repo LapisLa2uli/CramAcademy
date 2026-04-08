@@ -542,9 +542,10 @@ export default function AiExtractionWizard() {
           <p className="text-sm text-gray-500">
             {localOllamaInfo ? (
               <>
-                The bar moves while pages are <strong>rasterized</strong> (first half), then while each page is
-                sent to <strong>local Ollama</strong> (second half). Up to four pages run in parallel; slow
-                models can take several minutes per page.
+                The bar advances for each <strong>rasterized</strong> page, then for each{" "}
+                <strong>Ollama</strong> call (layout pass, main extraction, optional fix). It should move
+                during long inference, not only when a whole page finishes. Several pages may run in parallel;
+                slow models can take many minutes per call.
               </>
             ) : (
               <>
@@ -560,7 +561,7 @@ export default function AiExtractionWizard() {
                 aria-valuenow={analyzeProgress.completed}
                 aria-valuemin={0}
                 aria-valuemax={analyzeProgress.total}
-                aria-label="Pages analyzed"
+                aria-label="Extraction progress"
               >
                 <div
                   className="h-full bg-primary-600 transition-[width] duration-300 ease-out rounded-full"
@@ -572,7 +573,7 @@ export default function AiExtractionWizard() {
               <p className="text-sm text-gray-700 tabular-nums">
                 <span className="font-semibold text-gray-900">{analyzeProgress.completed}</span>
                 {" / "}
-                <span>{analyzeProgress.total}</span> pages analyzed
+                <span>{analyzeProgress.total}</span> steps (raster + Ollama calls)
               </p>
             </>
           ) : (

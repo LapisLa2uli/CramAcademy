@@ -124,20 +124,23 @@ export async function runLocalOllamaAnalyze(
   const maxEdge = highAccuracy ? 2560 : 1920;
   const effectiveTwoStage = twoStage && !layoutOnly;
 
-  /** Two-phase bar: first half = rasterizing pages, second half = vision per page (2× pageCount steps). */
+  /** Max Ollama calls per page we reserve progress for (layout + main + optional validation fix). */
+  const maxVisionSubstepsPerPage = layoutOnly ? 1 : effectiveTwoStage ? 3 : 2;
+
+  /** Total steps = raster (n) + vision substeps (n × maxVisionSubstepsPerPage). */
   const reportProgress = (completedUnits: number, totalUnits: number) => {
     options.onProgress?.(completedUnits, totalUnits);
   };
 
-  reportProgress(0, 2 * maxPages);
+  reportProgress(0, 1);
 
   const pages = await preparePagesFromFiles(files, {
     maxPages,
     dpi,
     maxEdge,
     onPagePrepared: ({ completed, total }) => {
-      const totalUnits = 2 * total;
-      reportProgress(completed, totalUnits);
+      const prepTotal = total * (1 + maxVisionSubstepsPerPage);
+      reportProgress(completed, prepTotal);
     },
   });
 
@@ -150,7 +153,7 @@ export async function runLocalOllamaAnalyze(
   }
 
   const n = pages.length;
-  const totalUnits = 2 * n;
+  const totalUnits = n * (1 + maxVisionSubstepsPerPage);
   reportProgress(n, totalUnits);
 
   let pdfTextByPage: Record<number, string> = {};
@@ -165,7 +168,13 @@ export async function runLocalOllamaAnalyze(
 
   const { baseUrl, model, useJsonSchema, pageConcurrency: concurrency, imageDetail } =
     getLocalOllamaConfig();
-  let visionDone = 0;
+
+  const visionSlotTotal = n * maxVisionSubstepsPerPage;
+  let visionSubstepsDone = 0;
+  const onVisionSubstep = () => {
+    visionSubstepsDone += 1;
+    reportProgress(n + Math.min(visionSubstepsDone, visionSlotTotal), totalUnits);
+  };
 
   const pageRaw = await mapWithConcurrency(pages, concurrency, async (p) => {
     const ptext = layoutOnly ? null : pdfTextByPage[p.pageIndex] ?? null;
@@ -180,9 +189,8 @@ export async function runLocalOllamaAnalyze(
       twoStage: effectiveTwoStage,
       layoutOnly,
       signal: options.signal,
+      onVisionSubstep,
     });
-    visionDone += 1;
-    reportProgress(n + visionDone, totalUnits);
     return {
       pageIndex: p.pageIndex,
       raw: data,
@@ -210,6 +218,8 @@ export async function runLocalOllamaAnalyze(
     warn.push(...r.warn);
   }
   warn.push(...collectExtractionWarnings(merged.sets));
+
+  reportProgress(totalUnits, totalUnits);
 
   return {
     warnings: warn,
