@@ -15,19 +15,29 @@ function formatOllamaFetchError(e: unknown, baseUrl: string): string {
     msg === "Failed to fetch" || msg.includes("NetworkError") || msg.includes("Load failed");
   if (!isFailedFetch) return msg;
 
-  if (typeof window !== "undefined" && window.location.protocol === "https:" && baseUrl.trim().toLowerCase().startsWith("http:")) {
+  const b = baseUrl.trim().toLowerCase();
+
+  if (typeof window !== "undefined" && window.location.protocol === "https:" && b.startsWith("http:")) {
     return (
       "Cannot reach Ollama: pages served over HTTPS cannot call http:// URLs (browser mixed-content blocking). " +
-      "Run the app locally at http://localhost:3000 for AI extract with local Ollama, " +
-      "or terminate HTTPS to your machine with a tunnel/proxy that exposes Ollama over HTTPS. " +
-      "See README, docs/nginx-ollama-proxy.conf (HTTP), and docs/nginx-ollama-proxy-https.conf (HTTPS)."
+      "Set NEXT_PUBLIC_OLLAMA_BASE_URL to https://127.0.0.1:8443 (and run `npm run ollama-https-proxy` locally), " +
+      "or use http://localhost:3000 for dev. See README and scripts/ollama-https-proxy.mjs."
+    );
+  }
+
+  if (b.startsWith("https://127.0.0.1") || b.startsWith("https://localhost")) {
+    return (
+      `Failed to reach Ollama at ${baseUrl}. ` +
+      "Start the HTTPS proxy (`cd frontend && npm run ollama-https-proxy`), ensure `ollama serve` is running, " +
+      "and if the browser blocked the connection due to a self-signed certificate, open that URL in a new tab once and proceed (or use mkcert). " +
+      "Direct HTTP Ollama without the proxy: set NEXT_PUBLIC_OLLAMA_BASE_URL=http://127.0.0.1:11434 and use http://localhost:3000."
     );
   }
 
   return (
     `Failed to reach Ollama at ${baseUrl}. ` +
-    "Ensure Ollama is running (`ollama serve`), NEXT_PUBLIC_OLLAMA_BASE_URL matches (e.g. http://127.0.0.1:11434), " +
-    "and CORS allows this origin. If you use http://localhost:3000 but Ollama is on 127.0.0.1, configure Ollama or nginx CORS for http://localhost:3000."
+    "Ensure Ollama is running (`ollama serve`), NEXT_PUBLIC_OLLAMA_BASE_URL matches your setup, " +
+    "and CORS allows this origin when using a custom proxy."
   );
 }
 

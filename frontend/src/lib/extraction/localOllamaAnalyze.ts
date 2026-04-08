@@ -32,15 +32,37 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+/** Local HTTPS proxy (see `npm run ollama-https-proxy`); avoids mixed content from https:// deployments. */
+const DEFAULT_OLLAMA_BROWSER_BASE = "https://127.0.0.1:8443";
+
+/**
+ * Resolves the OpenAI-compatible base URL for browser → Ollama.
+ * When the app is served over HTTPS (e.g. Vercel), `http://127.0.0.1:11434` is never reachable (mixed content).
+ * If env still points at plain HTTP **direct Ollama**, upgrade to the local HTTPS proxy URL at runtime.
+ */
+function resolveOllamaBaseUrl(): string {
+  const raw =
+    typeof process !== "undefined" && process.env?.NEXT_PUBLIC_OLLAMA_BASE_URL?.trim()
+      ? process.env.NEXT_PUBLIC_OLLAMA_BASE_URL.trim()
+      : DEFAULT_OLLAMA_BROWSER_BASE;
+  let baseUrl = raw.replace(/\/$/, "");
+
+  if (typeof window !== "undefined" && window.location.protocol === "https:") {
+    const lower = baseUrl.toLowerCase();
+    if (lower === "http://127.0.0.1:11434" || lower === "http://localhost:11434") {
+      baseUrl = DEFAULT_OLLAMA_BROWSER_BASE.replace(/\/$/, "");
+    }
+  }
+
+  return baseUrl;
+}
+
 export function getLocalOllamaConfig(): {
   baseUrl: string;
   model: string;
   useJsonSchema: boolean;
 } {
-  const baseUrl =
-    (typeof process !== "undefined" &&
-      process.env?.NEXT_PUBLIC_OLLAMA_BASE_URL?.trim()) ||
-    "http://127.0.0.1:11434";
+  const baseUrl = resolveOllamaBaseUrl();
   const model =
     (typeof process !== "undefined" &&
       process.env?.NEXT_PUBLIC_OLLAMA_MODEL?.trim()) ||
