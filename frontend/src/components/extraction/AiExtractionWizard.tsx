@@ -520,7 +520,17 @@ export default function AiExtractionWizard() {
         <div className="card p-8 space-y-4 max-w-lg">
           <p className="text-gray-800 font-medium">Analyzing pages…</p>
           <p className="text-sm text-gray-500">
-            Vision model runs in parallel (with a concurrency cap). Progress updates as each page finishes.
+            {localOllamaInfo ? (
+              <>
+                The bar moves while pages are <strong>rasterized</strong> (first half), then while each page is
+                sent to <strong>local Ollama</strong> (second half). Up to four pages run in parallel; slow
+                models can take several minutes per page.
+              </>
+            ) : (
+              <>
+                Vision model runs in parallel (with a concurrency cap). Progress updates as each page finishes.
+              </>
+            )}
           </p>
           {analyzeProgress != null && analyzeProgress.total > 0 ? (
             <>

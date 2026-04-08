@@ -79,19 +79,21 @@ export async function runLocalOllamaAnalyze(
   const maxEdge = highAccuracy ? 2560 : 1920;
   const effectiveTwoStage = twoStage && !layoutOnly;
 
-  let pdfTextByPage: Record<number, string> = {};
-  if (!layoutOnly && files.length === 1 && isPdfSingle(files)) {
-    try {
-      pdfTextByPage = await extractPdfPageTexts(files[0], maxPages);
-    } catch {
-      pdfTextByPage = {};
-    }
-  }
+  /** Two-phase bar: first half = rasterizing pages, second half = vision per page (2× pageCount steps). */
+  const reportProgress = (completedUnits: number, totalUnits: number) => {
+    options.onProgress?.(completedUnits, totalUnits);
+  };
+
+  reportProgress(0, 2 * maxPages);
 
   const pages = await preparePagesFromFiles(files, {
     maxPages,
     dpi,
     maxEdge,
+    onPagePrepared: ({ completed, total }) => {
+      const totalUnits = 2 * total;
+      reportProgress(completed, totalUnits);
+    },
   });
 
   if (pages.length === 0) {
@@ -102,11 +104,23 @@ export async function runLocalOllamaAnalyze(
     };
   }
 
+  const n = pages.length;
+  const totalUnits = 2 * n;
+  reportProgress(n, totalUnits);
+
+  let pdfTextByPage: Record<number, string> = {};
+  if (!layoutOnly && files.length === 1 && isPdfSingle(files)) {
+    try {
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      pdfTextByPage = await extractPdfPageTexts(files[0], maxPages);
+    } catch {
+      pdfTextByPage = {};
+    }
+  }
+
   const { baseUrl, model, useJsonSchema } = getLocalOllamaConfig();
   const concurrency = 4;
-  const total = pages.length;
-  let completed = 0;
-  options.onProgress?.(0, total);
+  let visionDone = 0;
 
   const pageRaw = await mapWithConcurrency(pages, concurrency, async (p) => {
     const ptext = layoutOnly ? null : pdfTextByPage[p.pageIndex] ?? null;
@@ -121,8 +135,8 @@ export async function runLocalOllamaAnalyze(
       layoutOnly,
       signal: options.signal,
     });
-    completed += 1;
-    options.onProgress?.(completed, total);
+    visionDone += 1;
+    reportProgress(n + visionDone, totalUnits);
     return {
       pageIndex: p.pageIndex,
       raw: data,

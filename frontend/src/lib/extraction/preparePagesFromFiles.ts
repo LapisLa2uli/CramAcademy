@@ -62,9 +62,11 @@ export async function preparePagesFromFiles(
     maxPages: number;
     dpi: number;
     maxEdge: number;
+    /** Fires when page count is known (total) and after each page is rasterized (completed 1..total). */
+    onPagePrepared?: (info: { completed: number; total: number }) => void;
   }
 ): Promise<PreparedPage[]> {
-  const { maxPages, dpi, maxEdge } = options;
+  const { maxPages, dpi, maxEdge, onPagePrepared } = options;
   const limit = Math.min(maxPages, 24);
 
   if (files.length === 0) return [];
@@ -75,6 +77,7 @@ export async function preparePagesFromFiles(
     const buf = await files[0].arrayBuffer();
     const doc = await pdfjs.getDocument({ data: buf }).promise;
     const n = Math.min(doc.numPages, limit);
+    onPagePrepared?.({ completed: 0, total: n });
     const scale = dpi / 72;
     const out: PreparedPage[] = [];
     for (let i = 1; i <= n; i++) {
@@ -89,14 +92,17 @@ export async function preparePagesFromFiles(
       const { canvas: resized, w, h } = resizeCanvasToMaxEdge(canvas, maxEdge);
       const pngBytes = await canvasToPngBytes(resized);
       out.push({ pageIndex: i - 1, pngBytes, width: w, height: h });
+      onPagePrepared?.({ completed: i, total: n });
     }
     return out;
   }
 
+  const nImg = Math.min(files.length, limit);
+  onPagePrepared?.({ completed: 0, total: nImg });
   const out2: PreparedPage[] = [];
-  for (let i = 0; i < Math.min(files.length, limit); i++) {
+  for (let i = 0; i < nImg; i++) {
     const f = files[i];
-    const { png: rawPng, w: w0, h: h0 } = await imageFileToPngBytes(f);
+    const { png: rawPng } = await imageFileToPngBytes(f);
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas unsupported.");
@@ -110,6 +116,7 @@ export async function preparePagesFromFiles(
     const { canvas: resized, w, h } = resizeCanvasToMaxEdge(canvas, maxEdge);
     const pngBytes = await canvasToPngBytes(resized);
     out2.push({ pageIndex: i, pngBytes, width: w, height: h });
+    onPagePrepared?.({ completed: i + 1, total: nImg });
   }
   return out2;
 }
