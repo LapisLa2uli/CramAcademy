@@ -57,10 +57,27 @@ function resolveOllamaBaseUrl(): string {
   return baseUrl;
 }
 
+function parsePageConcurrency(): number {
+  const raw =
+    typeof process !== "undefined" && process.env?.NEXT_PUBLIC_OLLAMA_PAGE_CONCURRENCY?.trim();
+  if (!raw) return 2;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return 2;
+  return Math.min(8, Math.max(1, n));
+}
+
+function parseImageDetail(): "low" | "high" {
+  const raw =
+    typeof process !== "undefined" && process.env?.NEXT_PUBLIC_OLLAMA_IMAGE_DETAIL?.trim().toLowerCase();
+  return raw === "high" ? "high" : "low";
+}
+
 export function getLocalOllamaConfig(): {
   baseUrl: string;
   model: string;
   useJsonSchema: boolean;
+  pageConcurrency: number;
+  imageDetail: "low" | "high";
 } {
   const baseUrl = resolveOllamaBaseUrl();
   const model =
@@ -70,7 +87,13 @@ export function getLocalOllamaConfig(): {
   const useJsonSchema =
     (typeof process !== "undefined" &&
       process.env?.NEXT_PUBLIC_EXTRACTION_USE_JSON_SCHEMA?.trim()) === "true";
-  return { baseUrl, model, useJsonSchema };
+  return {
+    baseUrl,
+    model,
+    useJsonSchema,
+    pageConcurrency: parsePageConcurrency(),
+    imageDetail: parseImageDetail(),
+  };
 }
 
 export function isClientOllamaExtractionEnabled(): boolean {
@@ -140,8 +163,8 @@ export async function runLocalOllamaAnalyze(
     }
   }
 
-  const { baseUrl, model, useJsonSchema } = getLocalOllamaConfig();
-  const concurrency = 4;
+  const { baseUrl, model, useJsonSchema, pageConcurrency: concurrency, imageDetail } =
+    getLocalOllamaConfig();
   let visionDone = 0;
 
   const pageRaw = await mapWithConcurrency(pages, concurrency, async (p) => {
@@ -152,6 +175,7 @@ export async function runLocalOllamaAnalyze(
       baseUrl,
       model,
       useJsonSchema,
+      imageDetail,
       pdfPageText: ptext,
       twoStage: effectiveTwoStage,
       layoutOnly,

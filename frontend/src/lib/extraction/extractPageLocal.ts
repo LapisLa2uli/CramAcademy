@@ -115,6 +115,7 @@ async function chat(
     baseUrl: string;
     model: string;
     useJsonSchema: boolean;
+    imageDetail: "low" | "high";
     signal?: AbortSignal;
   },
   system: string,
@@ -128,7 +129,7 @@ async function chat(
       role: "user",
       content: [
         { type: "text", text: userText },
-        { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
+        { type: "image_url", image_url: { url: dataUrl, detail: ctx.imageDetail } },
       ],
     },
   ];
@@ -162,6 +163,7 @@ async function chatFix(
   ctx: {
     baseUrl: string;
     model: string;
+    imageDetail: "low" | "high";
     signal?: AbortSignal;
   },
   pageIndex: number,
@@ -180,7 +182,7 @@ async function chatFix(
       role: "user",
       content: [
         { type: "text", text: user },
-        { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
+        { type: "image_url", image_url: { url: dataUrl, detail: ctx.imageDetail } },
       ],
     },
   ];
@@ -205,6 +207,8 @@ export async function extractPageLocal(params: {
   baseUrl: string;
   model: string;
   useJsonSchema: boolean;
+  /** OpenAI-style vision detail; `low` reduces tokens/RAM vs `high`. */
+  imageDetail?: "low" | "high";
   pdfPageText?: string | null;
   twoStage: boolean;
   layoutOnly: boolean;
@@ -212,10 +216,12 @@ export async function extractPageLocal(params: {
 }): Promise<{ data: Record<string, unknown>; warnings: string[] }> {
   const warnings: string[] = [];
   const dataUrl = pngToDataUrl(params.pngBytes);
+  const imageDetail = params.imageDetail ?? "low";
   const ctx = {
     baseUrl: params.baseUrl,
     model: params.model,
     useJsonSchema: params.useJsonSchema,
+    imageDetail,
     signal: params.signal,
   };
 
@@ -316,7 +322,12 @@ export async function extractPageLocal(params: {
     const issues = validatePagePayload(data);
     if (issues.length) {
       const fixed = await chatFix(
-        { baseUrl: params.baseUrl, model: params.model, signal: params.signal },
+        {
+          baseUrl: params.baseUrl,
+          model: params.model,
+          imageDetail,
+          signal: params.signal,
+        },
         params.pageIndex,
         issues,
         data,

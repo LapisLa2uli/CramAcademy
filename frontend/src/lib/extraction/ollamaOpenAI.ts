@@ -48,6 +48,41 @@ export type ChatMessage = {
     | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string; detail?: string } }>;
 };
 
+/** When no parent `signal` is passed, default wall clock per request (local vision can be slow). Override via `NEXT_PUBLIC_OLLAMA_CHAT_TIMEOUT_MS`. */
+const DEFAULT_CHAT_TIMEOUT_NO_PARENT_MS = 30 * 60 * 1000;
+
+function envChatTimeoutMs(): number {
+  if (typeof process === "undefined") return DEFAULT_CHAT_TIMEOUT_NO_PARENT_MS;
+  const v = process.env.NEXT_PUBLIC_OLLAMA_CHAT_TIMEOUT_MS?.trim();
+  if (!v) return DEFAULT_CHAT_TIMEOUT_NO_PARENT_MS;
+  const n = Number.parseInt(v, 10);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_CHAT_TIMEOUT_NO_PARENT_MS;
+}
+
+/**
+ * Parent `signal` (e.g. full-job budget from `api.extraction.analyze`) must not be combined with a
+ * short default per-call timeout — that used to abort every vision request at 180s while Ollama
+ * was still working.
+ */
+function resolveChatAbortSignal(params: {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}): AbortSignal | undefined {
+  const hasTimeout = typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function";
+  const hasAny = typeof AbortSignal !== "undefined" && "any" in AbortSignal;
+
+  if (params.signal) {
+    if (params.timeoutMs != null && hasTimeout && hasAny) {
+      return AbortSignal.any([params.signal, AbortSignal.timeout(params.timeoutMs)]);
+    }
+    return params.signal;
+  }
+
+  const ms = params.timeoutMs ?? envChatTimeoutMs();
+  if (hasTimeout) return AbortSignal.timeout(ms);
+  return undefined;
+}
+
 export async function ollamaChatCompletion(params: {
   baseUrl: string;
   model: string;
@@ -55,6 +90,7 @@ export async function ollamaChatCompletion(params: {
   temperature?: number;
   responseFormat?: { type: string; json_schema?: unknown };
   signal?: AbortSignal;
+  /** Optional cap when `signal` is also set (both can abort the request). */
   timeoutMs?: number;
 }): Promise<{ content: string | null }> {
   const url = `${params.baseUrl.replace(/\/$/, "")}/v1/chat/completions`;
@@ -68,24 +104,20 @@ export async function ollamaChatCompletion(params: {
     body.response_format = params.responseFormat;
   }
 
-  const t = params.timeoutMs ?? 180_000;
-  const timeoutSig =
-    typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
-      ? AbortSignal.timeout(t)
-      : undefined;
-  let signal = params.signal ?? timeoutSig;
-  if (params.signal && timeoutSig && typeof AbortSignal !== "undefined" && "any" in AbortSignal) {
-    signal = AbortSignal.any([params.signal, timeoutSig]);
-  }
+  const signal = resolveChatAbortSignal({
+    signal: params.signal,
+    timeoutMs: params.timeoutMs,
+  });
 
   let res: Response;
   try {
-    res = await fetch(url, {
+    const init: RequestInit = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal,
-    });
+    };
+    if (signal) init.signal = signal;
+    res = await fetch(url, init);
   } catch (e) {
     throw new Error(formatOllamaFetchError(e, params.baseUrl));
   }
