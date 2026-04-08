@@ -21,6 +21,10 @@ import type {
 import SubjectPicker from "@/components/SubjectPicker";
 import ExtractionReviewOverlay from "./ExtractionReviewOverlay";
 import LayoutTemplatePanel from "./LayoutTemplatePanel";
+import {
+  getLocalOllamaConfig,
+  isClientOllamaExtractionEnabled,
+} from "@/lib/extraction/localOllamaAnalyze";
 
 type Step = "upload" | "analyze" | "review" | "done";
 type ExtractionMode = "full" | "layout";
@@ -71,6 +75,11 @@ export default function AiExtractionWizard() {
 
   const pages: ExtractionPage[] = data?.pages ?? [];
   const currentPage = pages[pageIdx] ?? null;
+
+  const localOllamaInfo = useMemo(() => {
+    if (!isClientOllamaExtractionEnabled()) return null;
+    return getLocalOllamaConfig();
+  }, []);
 
   const handleSlotAssign = useCallback(
     (slotId: string, regionId: string) => {
@@ -394,6 +403,20 @@ export default function AiExtractionWizard() {
 
       {step === "upload" && (
         <div className="card p-6 space-y-4">
+          {localOllamaInfo ? (
+            <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
+              <p className="font-medium">Local Ollama extraction</p>
+              <p className="text-sky-900/90 mt-1">
+                Pages are analyzed in your browser at{" "}
+                <code className="text-xs bg-white/80 px-1 rounded">{localOllamaInfo.baseUrl}</code>{" "}
+                (model <code className="text-xs bg-white/80 px-1 rounded">{localOllamaInfo.model}</code>
+                ). Install Ollama, pull that model, and allow your app origin in Ollama CORS so the
+                browser can reach localhost. Saving to your bank still uses the API (
+                <code className="text-xs bg-white/80 px-1 rounded">POST /extraction/commit</code>
+                ).
+              </p>
+            </div>
+          ) : null}
           <input
             type="file"
             multiple

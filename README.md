@@ -157,6 +157,14 @@ The app will be available at `http://localhost:3000`.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous key          |
 | `NEXT_PUBLIC_SITE_URL`          | Optional. **Canonical site URL** (no trailing slash), e.g. `https://cram-academy.vercel.app`. Used for **email confirmation** redirects on signup. If unset, the browser uses `window.location.origin` (fine when users sign up on the same host). Set on Vercel if links must always point at production. |
 | `NEXT_PUBLIC_API_URL`           | Optional. Omit locally to use `/backend-api` proxy to FastAPI. Set for production (full URL, no trailing slash). For **long NDJSON extraction streams**, pointing the browser **directly** at the API (not through the Next.js rewrite) avoids some proxies buffering chunks until the response ends, so the **progress bar** updates smoothly. |
+| `NEXT_PUBLIC_EXTRACTION_MODE`   | Set to **`local_ollama`** to run **AI extract** in the **browser** against **Ollama on the user’s machine** (`http://127.0.0.1:11434` by default). PDF/pages are rasterized client-side; **`POST /extraction/commit`** still saves to the bank. Omit or leave unset to use the server **`/extraction/analyze-stream`** (302.ai / server Ollama). |
+| `NEXT_PUBLIC_OLLAMA_BASE_URL`   | OpenAI-compatible base URL for local extraction (default **`http://127.0.0.1:11434`**). |
+| `NEXT_PUBLIC_OLLAMA_MODEL`      | Ollama model tag for vision extraction (default **`qwen2.5vl`**). Run `ollama pull` for that tag. |
+| `NEXT_PUBLIC_EXTRACTION_USE_JSON_SCHEMA` | Optional. **`true`** only if your Ollama version accepts OpenAI **`json_schema`** `response_format`; otherwise omit or **`false`** (uses `json_object`). |
+
+**User-local Ollama (production site + browser):** The app origin (e.g. `https://your-app.vercel.app`) is **different** from `http://127.0.0.1`, so the browser must be allowed to call Ollama. Configure Ollama’s **CORS / allowed origins** (e.g. `OLLAMA_ORIGINS` or the option your Ollama version uses) to include your **exact** site origin. Only add origins you trust; a wide-open policy while Ollama is running is a security risk.
+
+**Backend when using only client extraction:** You can set **`EXTRACTION_ENABLED=false`** on the API host so **`/extraction/analyze-stream`** is disabled in production; **`POST /extraction/commit`** remains for saving. FRQ **grading** and other features still use **`AI_PROVIDER`** / **`OPENAI_API_KEY`** on the server unless you change those separately.
 
 **Supabase email confirmation:** In **Authentication → URL configuration**, set **Site URL** to your production app (e.g. `https://cram-academy.vercel.app`) and add **Redirect URLs** including `https://cram-academy.vercel.app/login` and `http://localhost:3000/login` so `emailRedirectTo` from signup is allowed.
 

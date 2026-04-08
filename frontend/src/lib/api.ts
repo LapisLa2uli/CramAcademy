@@ -17,6 +17,10 @@ import {
   ExtractionCommitBody,
 } from "@/types";
 import { supabase } from "./supabase";
+import {
+  isClientOllamaExtractionEnabled,
+  runLocalOllamaAnalyze,
+} from "@/lib/extraction/localOllamaAnalyze";
 
 /**
  * If NEXT_PUBLIC_API_URL is unset/empty, the browser calls same-origin `/backend-api/*`
@@ -434,9 +438,24 @@ export const api = {
         onProgress?: (completed: number, total: number) => void;
       }
     ): Promise<ExtractionAnalyzeResponse> {
-      const token = await getToken();
       const maxPages = opts?.max_pages ?? 24;
       const noClientTimeout = opts?.disableClientTimeout === true;
+
+      if (isClientOllamaExtractionEnabled()) {
+        const maxTotalMs = extractionTimeoutMs(files, maxPages);
+        const signal = noClientTimeout ? undefined : AbortSignal.timeout(maxTotalMs);
+        return runLocalOllamaAnalyze(files, {
+          max_pages: maxPages,
+          dpi: opts?.dpi,
+          high_accuracy: opts?.high_accuracy,
+          two_stage: opts?.two_stage,
+          layout_only: opts?.layout_only,
+          onProgress: opts?.onProgress,
+          signal,
+        });
+      }
+
+      const token = await getToken();
 
       /** Cheap GET before large upload — reduces “Failed to fetch” when Render is asleep. */
       if (isLikelyColdStartHost()) {
@@ -786,6 +805,19 @@ export const api = {
         layout_only?: boolean;
       }
     ): Promise<ExtractionAnalyzeResponse> {
+      if (isClientOllamaExtractionEnabled()) {
+        const maxTotalMs = extractionTimeoutMs([file], 1);
+        const signal = AbortSignal.timeout(maxTotalMs);
+        return runLocalOllamaAnalyze([file], {
+          max_pages: 1,
+          dpi: opts?.dpi,
+          high_accuracy: opts?.high_accuracy,
+          two_stage: opts?.two_stage,
+          layout_only: opts?.layout_only,
+          signal,
+        });
+      }
+
       const token = await getToken();
       const fd = new FormData();
       fd.append("file", file);
