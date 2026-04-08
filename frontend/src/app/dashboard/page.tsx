@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import TestConfigForm from "@/components/TestConfigForm";
-import type { TestConfig } from "@/types";
+import type { TestConfig, WrongBookEntry } from "@/types";
 import { uploadQuestionImage } from "@/lib/questionImageUpload";
 import SubjectPicker from "@/components/SubjectPicker";
 import RubricTableEditor, {
@@ -44,6 +44,12 @@ export default function DashboardPage() {
   const router = useRouter();
   const [generating, setGenerating] = useState(false);
   const [recentTests, setRecentTests] = useState<RecentTest[]>([]);
+  const [wrongSubjectId, setWrongSubjectId] = useState("");
+  const [wrongSubjectName, setWrongSubjectName] = useState("");
+  const [wrongEntries, setWrongEntries] = useState<WrongBookEntry[]>([]);
+  const [wrongLoading, setWrongLoading] = useState(false);
+  const [wrongErr, setWrongErr] = useState<string | null>(null);
+  const [wrongLoaded, setWrongLoaded] = useState(false);
   const [tab, setTab] = useState<"test" | "contribute">("test");
   const [contributeMode, setContributeMode] = useState<
     "standard" | "pdf" | "question-set" | "pdf-question-set" | "ai-extract"
@@ -58,6 +64,43 @@ export default function DashboardPage() {
       alert(err instanceof Error ? err.message : "Failed to generate test");
     } finally {
       setGenerating(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!user?.id) return;
+    void api.tests
+      .list(50)
+      .then((rows) =>
+        setRecentTests(
+          rows.map((t) => ({
+            id: t.id,
+            subject: t.subject,
+            created_at: t.created_at,
+            finished_at: t.finished_at,
+          }))
+        )
+      )
+      .catch(() => setRecentTests([]));
+  }, [user?.id]);
+
+  const loadWrongBook = async () => {
+    if (!wrongSubjectName.trim()) {
+      setWrongErr("Pick a subject to load missed questions.");
+      return;
+    }
+    setWrongErr(null);
+    setWrongLoading(true);
+    try {
+      const rows = await api.tests.wrongBook({ subject: wrongSubjectName.trim() });
+      setWrongEntries(rows);
+      setWrongLoaded(true);
+    } catch (e) {
+      setWrongErr(e instanceof Error ? e.message : "Could not load wrong book.");
+      setWrongEntries([]);
+      setWrongLoaded(false);
+    } finally {
+      setWrongLoading(false);
     }
   };
 
@@ -99,41 +142,102 @@ export default function DashboardPage() {
               <TestConfigForm onSubmit={handleGenerate} loading={generating} />
             </div>
 
-            <div>
-              <h2 className="text-lg font-semibold text-gray-800 mb-4" data-tutorial="recent-tests">Recent Tests</h2>
-              {recentTests.length === 0 ? (
-                <div className="card p-8 text-center text-gray-400">
-                  <p>No tests yet. Generate your first test!</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {recentTests.map((test) => (
-                    <Link
-                      key={test.id}
-                      href={test.finished_at ? `/results/${test.id}` : `/test/${test.id}`}
-                      className="card p-4 flex items-center justify-between hover:shadow-md transition-shadow block"
-                    >
-                      <div>
-                        <p className="font-medium text-gray-800">
-                          {test.subject || "Mixed"}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {new Date(test.created_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <span
-                        className={`text-xs font-medium px-2 py-1 rounded ${
-                          test.finished_at
-                            ? "bg-green-50 text-green-600"
-                            : "bg-yellow-50 text-yellow-600"
-                        }`}
+            <div className="space-y-8">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-800 mb-4" data-tutorial="recent-tests">Recent tests</h2>
+                {recentTests.length === 0 ? (
+                  <div className="card p-8 text-center text-gray-400">
+                    <p>No tests yet. Generate your first test!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {recentTests.map((test) => (
+                      <Link
+                        key={test.id}
+                        href={test.finished_at ? `/results/${test.id}` : `/test/${test.id}`}
+                        className="card p-4 flex items-center justify-between hover:shadow-md transition-shadow block"
                       >
-                        {test.finished_at ? "Completed" : "In Progress"}
-                      </span>
-                    </Link>
-                  ))}
+                        <div>
+                          <p className="font-medium text-gray-800">
+                            {test.subject || "Mixed"}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {new Date(test.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <span
+                          className={`text-xs font-medium px-2 py-1 rounded ${
+                            test.finished_at
+                              ? "bg-green-50 text-green-600"
+                              : "bg-yellow-50 text-yellow-600"
+                          }`}
+                        >
+                          {test.finished_at ? "Completed" : "In Progress"}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h2 className="text-lg font-semibold text-gray-800 mb-2">Wrong-answer booklet</h2>
+                <p className="text-sm text-gray-600 mb-3">
+                  Review questions you missed (latest attempt per question). Use{" "}
+                  <strong>Question pool → Wrong answers only</strong> in the form to generate a practice test from them.
+                </p>
+                <div className="card p-4 space-y-3 border border-gray-200">
+                  <SubjectPicker
+                    subjectId={wrongSubjectId}
+                    onSubjectChange={(id, name) => {
+                      setWrongSubjectId(id);
+                      setWrongSubjectName(name);
+                    }}
+                    level=""
+                    onLevelChange={() => {}}
+                    allowAny={false}
+                  />
+                  <button
+                    type="button"
+                    className="btn-primary text-sm py-1.5"
+                    disabled={wrongLoading || !wrongSubjectName.trim()}
+                    onClick={() => void loadWrongBook()}
+                  >
+                    {wrongLoading ? "Loading…" : "Load missed questions"}
+                  </button>
+                  {wrongErr && (
+                    <p className="text-sm text-red-600">{wrongErr}</p>
+                  )}
+                  {wrongEntries.length > 0 ? (
+                    <ul className="space-y-2 max-h-64 overflow-y-auto text-sm border-t border-gray-100 pt-3">
+                      {wrongEntries.map((row) => (
+                        <li key={row.question.id} className="border-b border-gray-50 pb-2 last:border-0">
+                          <p className="text-gray-800 line-clamp-2">
+                            {row.question.content?.slice(0, 160)}
+                            {(row.question.content?.length ?? 0) > 160 ? "…" : ""}
+                          </p>
+                          {row.question.context_text ? (
+                            <p className="text-xs text-gray-500 mt-1 line-clamp-1">
+                              Context: {row.question.context_text.slice(0, 120)}
+                              {row.question.context_text.length > 120 ? "…" : ""}
+                            </p>
+                          ) : null}
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            <Link
+                              href={`/results/${row.test_id}`}
+                              className="text-xs text-primary-600 hover:underline"
+                            >
+                              View test results
+                            </Link>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : wrongLoaded && wrongEntries.length === 0 && !wrongErr ? (
+                    <p className="text-sm text-gray-500">No wrong answers recorded for this subject yet.</p>
+                  ) : null}
                 </div>
-              )}
+              </div>
             </div>
           </div>
         )}

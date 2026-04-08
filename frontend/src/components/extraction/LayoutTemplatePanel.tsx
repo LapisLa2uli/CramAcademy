@@ -78,6 +78,8 @@ export default function LayoutTemplatePanel({
   manualAnswers,
   setManualAnswers,
   regionPreviewById,
+  /** When set (e.g. parent needs instant crop thumbnails), called instead of internal assign. */
+  onSlotAssign,
 }: {
   templates: LayoutSetTemplate[];
   setTemplates: React.Dispatch<React.SetStateAction<LayoutSetTemplate[]>>;
@@ -86,6 +88,7 @@ export default function LayoutTemplatePanel({
   manualAnswers: Record<string, string>;
   setManualAnswers: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   regionPreviewById: Record<string, string>;
+  onSlotAssign?: (slotId: string, regionId: string) => void;
 }) {
   const addQuestionSet = useCallback(() => {
     setTemplates((prev) => [
@@ -122,9 +125,13 @@ export default function LayoutTemplatePanel({
 
   const onAssign = useCallback(
     (slotId: string, regionId: string) => {
+      if (onSlotAssign) {
+        onSlotAssign(slotId, regionId);
+        return;
+      }
       setAssignments((prev) => assignRegionToSlot(prev, slotId, regionId));
     },
-    [setAssignments]
+    [setAssignments, onSlotAssign]
   );
 
   const onClearSlot = useCallback(

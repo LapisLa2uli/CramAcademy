@@ -5,7 +5,9 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { buildExtractionCommitPayload } from "@/lib/extraction/buildExtractionCommitPayload";
 import {
+  assignRegionToSlot,
   buildCommitFromSlotLayout,
+  findRegionInPages,
   validateLayoutCommit,
 } from "@/lib/extraction/buildCommitFromSlotLayout";
 import { cropNormRectToPngBlob } from "@/lib/extraction/cropExtractionImage";
@@ -63,14 +65,42 @@ export default function AiExtractionWizard() {
   cropPreviewsRef.current = cropPreviews;
 
   const [extractionMode, setExtractionMode] = useState<ExtractionMode>("full");
-  const [layoutPages, setLayoutPages] = useState<ExtractionPage[] | null>(null);
   const [layoutTemplates, setLayoutTemplates] = useState<LayoutSetTemplate[]>([]);
   const [layoutAssignments, setLayoutAssignments] = useState<Record<string, string | null>>({});
   const [layoutManualAnswers, setLayoutManualAnswers] = useState<Record<string, string>>({});
 
-  const pages: ExtractionPage[] =
-    extractionMode === "layout" && layoutPages ? layoutPages : data?.pages ?? [];
+  const pages: ExtractionPage[] = data?.pages ?? [];
   const currentPage = pages[pageIdx] ?? null;
+
+  const handleSlotAssign = useCallback(
+    (slotId: string, regionId: string) => {
+      setLayoutAssignments((prev) => assignRegionToSlot(prev, slotId, regionId));
+      if (!data?.pages.length) return;
+      const found = findRegionInPages(data.pages, regionId);
+      if (!found) return;
+      const { page, region } = found;
+      const bb = bboxOverrides[region.id] ?? region.bbox;
+      void (async () => {
+        try {
+          const blob = await cropNormRectToPngBlob(
+            page.image_base64,
+            bb,
+            page.width_px,
+            page.height_px
+          );
+          const url = URL.createObjectURL(blob);
+          setCropPreviews((prev) => {
+            const old = prev[regionId];
+            if (old) URL.revokeObjectURL(old);
+            return { ...prev, [regionId]: url };
+          });
+        } catch {
+          /* ignore crop failure */
+        }
+      })();
+    },
+    [data?.pages, bboxOverrides]
+  );
 
   const startAnalyze = async () => {
     if (files.length === 0) {
@@ -97,12 +127,9 @@ export default function AiExtractionWizard() {
       setEditableSets(structuredClone(res.sets));
       setBboxOverrides({});
       if (extractionMode === "layout") {
-        setLayoutPages(structuredClone(res.pages));
         setLayoutTemplates([]);
         setLayoutAssignments({});
         setLayoutManualAnswers({});
-      } else {
-        setLayoutPages(null);
       }
       setPageIdx(0);
       setPageRegenHint(null);
@@ -156,12 +183,6 @@ export default function AiExtractionWizard() {
         return { ...prev, pages: nextPages, warnings: mergedWarn };
       });
       if (extractionMode === "layout") {
-        setLayoutPages((prev) => {
-          if (!prev) return prev;
-          const next = [...prev];
-          next[pageIdx] = { ...newP, page_index: keepIdx };
-          return next;
-        });
         const newIds = new Set(newP.regions.map((r) => r.id));
         setLayoutAssignments((a) => {
           const n = { ...a };
@@ -199,7 +220,7 @@ export default function AiExtractionWizard() {
   const canCommit = useMemo(() => {
     if (!subjectName.trim() || !data) return false;
     if (extractionMode === "layout") {
-      if (!layoutPages?.length || layoutTemplates.length === 0) return false;
+      if (!data.pages?.length || layoutTemplates.length === 0) return false;
       return (
         validateLayoutCommit(layoutTemplates, layoutAssignments, layoutManualAnswers) === null
       );
@@ -209,7 +230,6 @@ export default function AiExtractionWizard() {
     subjectName,
     data,
     extractionMode,
-    layoutPages,
     layoutTemplates,
     layoutAssignments,
     layoutManualAnswers,
@@ -297,13 +317,9 @@ export default function AiExtractionWizard() {
           setErr(verr);
           return;
         }
-        if (!layoutPages) {
-          setErr("Layout data missing.");
-          return;
-        }
         const payload = await buildCommitFromSlotLayout({
           userId: user.id,
-          pages: layoutPages,
+          pages: data.pages,
           templates: layoutTemplates,
           assignments: layoutAssignments,
           manualAnswers: layoutManualAnswers,
@@ -354,7 +370,6 @@ export default function AiExtractionWizard() {
           setFiles([]);
           setData(null);
           setEditableSets([]);
-          setLayoutPages(null);
           setLayoutTemplates([]);
           setLayoutAssignments({});
           setLayoutManualAnswers({});
@@ -606,6 +621,7 @@ export default function AiExtractionWizard() {
                     manualAnswers={layoutManualAnswers}
                     setManualAnswers={setLayoutManualAnswers}
                     regionPreviewById={cropPreviews}
+                    onSlotAssign={handleSlotAssign}
                   />
                 </>
               ) : (

@@ -4,7 +4,13 @@ from typing import Literal
 from database import get_supabase_admin
 
 
-def _apply_filters(query, subject: str, course_level: str | None, grade_level: int | None, question_type: str | None = None):
+def _apply_filters(
+    query,
+    subject: str,
+    course_level: str | None,
+    grade_level: int | None,
+    question_type: str | None = None,
+):
     query = query.eq("subject", subject)
     if course_level:
         query = query.eq("course_level", course_level)
@@ -15,6 +21,55 @@ def _apply_filters(query, subject: str, course_level: str | None, grade_level: i
     return query
 
 
+def _question_matches_filters(
+    q: dict,
+    subject: str,
+    course_level: str | None,
+    grade_level: int | None,
+) -> bool:
+    if q.get("subject") != subject:
+        return False
+    if course_level and q.get("course_level") != course_level:
+        return False
+    if grade_level is not None and q.get("grade_level") != grade_level:
+        return False
+    return True
+
+
+async def _load_wrong_questions_pool(
+    *,
+    user_id: str,
+    subject: str,
+    course_level: str | None,
+    grade_level: int | None,
+    question_type: str | None,
+) -> list[dict]:
+    """Questions the user previously got wrong (is_correct is false), for this subject."""
+    client = get_supabase_admin()
+    subs = (
+        client.table("submissions")
+        .select("question_id")
+        .eq("user_id", user_id)
+        .eq("is_correct", False)
+        .execute()
+    )
+    rows = subs.data or []
+    if not rows:
+        return []
+    qids = list({r["question_id"] for r in rows if r.get("question_id")})
+    if not qids:
+        return []
+    qres = client.table("questions").select("*").in_("id", qids).execute()
+    pool: list[dict] = []
+    for q in qres.data or []:
+        if not _question_matches_filters(q, subject, course_level, grade_level):
+            continue
+        if question_type and q.get("type") != question_type:
+            continue
+        pool.append(q)
+    return pool
+
+
 async def generate_test_questions(
     *,
     user_id: str,
@@ -22,16 +77,28 @@ async def generate_test_questions(
     num_questions: int,
     course_level: str | None = None,
     grade_level: int | None = None,
-    question_source: Literal["personal", "community", "both"] = "both",
+    question_source: Literal["personal", "community", "both", "wrong_book"] = "both",
     question_type: str | None = None,
 ) -> list[dict]:
-    """Select random questions from personal bank, community bank, or both.
+    """Select random questions from personal bank, community bank, both, or wrong-book pool.
 
     When a selected question belongs to a question set, ALL sibling questions
     in that set are pulled in (to keep the context group together).
     The total number of returned questions will equal ``num_questions``.
     """
     client = get_supabase_admin()
+
+    if question_source == "wrong_book":
+        unique = await _load_wrong_questions_pool(
+            user_id=user_id,
+            subject=subject,
+            course_level=course_level,
+            grade_level=grade_level,
+            question_type=question_type,
+        )
+        if not unique:
+            return []
+        return _select_from_pool(unique, num_questions, client)
 
     pools: list[dict] = []
 
@@ -58,6 +125,11 @@ async def generate_test_questions(
             seen.add(qid)
             unique.append(row)
 
+    return _select_from_pool(unique, num_questions, client)
+
+
+def _select_from_pool(unique: list[dict], num_questions: int, client) -> list[dict]:
+    """Shared selection: complete sets first, then standalone, up to num_questions."""
     # Separate into set-grouped questions and standalone questions
     set_groups: dict[str, list[dict]] = {}  # set_id -> list of questions
     standalone: list[dict] = []

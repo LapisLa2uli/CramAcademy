@@ -28,7 +28,7 @@ function bboxOf(
   return overrides[r.id] ?? r.bbox;
 }
 
-function findRegion(
+export function findRegionInPages(
   pages: ExtractionPage[],
   regionId: string
 ): { page: ExtractionPage; region: ExtractionRegion } | null {
@@ -148,7 +148,7 @@ export async function buildCommitFromSlotLayout(params: {
       const sid = `${t.id}-ctx-${c}`;
       const rid = assignments[sid];
       if (!rid) continue;
-      const found = findRegion(pages, rid);
+      const found = findRegionInPages(pages, rid);
       if (!found) continue;
       const { page, region } = found;
       const tx = (region.text || "").trim();
@@ -182,7 +182,7 @@ export async function buildCommitFromSlotLayout(params: {
       const qn = qi + 1;
       const spec = t.questions[qi];
       const stemRid = assignments[`${t.id}-q${qn}-stem`]!;
-      const stemFound = findRegion(pages, stemRid);
+      const stemFound = findRegionInPages(pages, stemRid);
       if (!stemFound) {
         throw new Error(`Missing region for Q${qn} stem.`);
       }
@@ -205,7 +205,7 @@ export async function buildCommitFromSlotLayout(params: {
         for (let k = 0; k < spec.choiceCount; k++) {
           const cid = `${t.id}-q${qn}-c${k}`;
           const crid = assignments[cid]!;
-          const cf = findRegion(pages, crid);
+          const cf = findRegionInPages(pages, crid);
           if (!cf) {
             throw new Error(`Missing region for Q${qn} choice ${choiceLabel(k)}.`);
           }
@@ -227,7 +227,7 @@ export async function buildCommitFromSlotLayout(params: {
       const ansSlotRid = assignments[`${t.id}-q${qn}-ans`];
       let answer = (manualAnswers[manualAnswerKey(t.id, qn, "answer")] || "").trim();
       if (ansSlotRid) {
-        const af = findRegion(pages, ansSlotRid);
+        const af = findRegionInPages(pages, ansSlotRid);
         if (af) {
           const ar = await regionToTextOrImage(
             userId,
@@ -246,7 +246,7 @@ export async function buildCommitFromSlotLayout(params: {
       let explanation: string | undefined =
         (manualAnswers[manualAnswerKey(t.id, qn, "exp")] || "").trim() || undefined;
       if (expSlotRid) {
-        const ef = findRegion(pages, expSlotRid);
+        const ef = findRegionInPages(pages, expSlotRid);
         if (ef) {
           const er = await regionToTextOrImage(
             userId,

@@ -3,7 +3,7 @@ export type CourseLevel = "S" | "S+" | "H" | "H+";
 export type ProtestStatus = "pending" | "accepted" | "rejected";
 export type UserRole = "user" | "moderator" | "admin";
 export type QuestionPool = "personal" | "community_pending" | "community";
-export type QuestionSource = "personal" | "community" | "both";
+export type QuestionSource = "personal" | "community" | "both" | "wrong_book";
 
 export interface Subject {
   id: string;
@@ -101,7 +101,8 @@ export interface AdminUserRow {
   created_at?: string | null;
 }
 
-export interface Test {
+/** Row from GET /tests (no question list). */
+export interface TestSummary {
   id: string;
   user_id: string;
   subject?: string;
@@ -111,7 +112,18 @@ export interface Test {
   started_at?: string;
   finished_at?: string;
   created_at: string;
+}
+
+export interface Test extends TestSummary {
   questions: Question[];
+}
+
+/** GET /tests/wrong-book — a missed question with where/when it was missed. */
+export interface WrongBookEntry {
+  question: Question;
+  submission_id: string;
+  test_id: string;
+  created_at: string;
 }
 
 export interface Submission {

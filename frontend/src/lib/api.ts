@@ -1,5 +1,7 @@
 import {
   Test,
+  TestSummary,
+  WrongBookEntry,
   Submission,
   Protest,
   Question,
@@ -832,6 +834,20 @@ export const api = {
   },
 
   tests: {
+    list(limit = 50) {
+      return apiFetch<TestSummary[]>(`/tests?limit=${limit}`);
+    },
+    wrongBook(params: {
+      subject: string;
+      course_level?: string;
+      grade_level?: number;
+    }) {
+      const sp = new URLSearchParams();
+      sp.set("subject", params.subject);
+      if (params.course_level) sp.set("course_level", params.course_level);
+      if (params.grade_level != null) sp.set("grade_level", String(params.grade_level));
+      return apiFetch<WrongBookEntry[]>(`/tests/wrong-book?${sp.toString()}`);
+    },
     generate(config: TestConfig) {
       return apiFetch<Test>("/tests/generate", {
         method: "POST",

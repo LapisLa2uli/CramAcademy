@@ -9,9 +9,9 @@ class TestGenerateRequest(BaseModel):
     grade_level: Optional[int] = Field(None, ge=1, le=12)
     num_questions: int = 10
     time_limit_seconds: int = 3600
-    question_source: Literal["personal", "community", "both"] = Field(
+    question_source: Literal["personal", "community", "both", "wrong_book"] = Field(
         default="both",
-        description="Personal bank, shared validated community bank, or both.",
+        description="Personal bank, community bank, both, or questions you previously missed (wrong book).",
     )
     question_type: Optional[Literal["mcq", "frq"]] = Field(
         default=None,

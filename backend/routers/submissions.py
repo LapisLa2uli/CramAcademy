@@ -42,8 +42,12 @@ async def _grade_submission(submission_id: str):
             student_answer=submission["user_answer"],
         )
 
+        score_val = float(result["score"])
+        is_correct = score_val >= max_score
+
         admin.table("submissions").update({
-            "score": result["score"],
+            "score": score_val,
+            "is_correct": is_correct,
             "feedback": result["feedback"],
             "justification": result["justification"],
             "graded_at": datetime.now(timezone.utc).isoformat(),

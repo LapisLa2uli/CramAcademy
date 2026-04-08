@@ -82,7 +82,14 @@ export default function TestConfigForm({ onSubmit, loading }: TestConfigFormProp
           <option value="both">Personal + community (mixed)</option>
           <option value="personal">Personal bank only</option>
           <option value="community">Community bank only (moderator-approved)</option>
+          <option value="wrong_book">Wrong answers only (this subject)</option>
         </select>
+        {questionSource === "wrong_book" ? (
+          <p className="text-xs text-gray-500 mt-1">
+            Builds a test from questions you missed on past tests (same subject; optional grade/course filters
+            below apply to those questions).
+          </p>
+        ) : null}
       </div>
 
       <div>
