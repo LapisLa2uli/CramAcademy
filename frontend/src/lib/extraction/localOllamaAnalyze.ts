@@ -102,7 +102,7 @@ export function getLocalOllamaConfig(): {
   const model =
     (typeof process !== "undefined" &&
       process.env?.NEXT_PUBLIC_OLLAMA_MODEL?.trim()) ||
-    "llava:v1.6";
+    "llava:7b";
   const useJsonSchema =
     (typeof process !== "undefined" &&
       process.env?.NEXT_PUBLIC_EXTRACTION_USE_JSON_SCHEMA?.trim()) === "true";

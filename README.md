@@ -128,7 +128,7 @@ The app will be available at `http://localhost:3000`.
 | `OPENAI_BASE_URL`            | `https://api.302.ai/v1`                  |
 | `OPENAI_MODEL`               | `gpt-5.4-mini-2026-03-17` (default)     |
 | `OLLAMA_BASE_URL`            | `http://localhost:11434`                 |
-| `OLLAMA_MODEL`               | Model tag when **`AI_PROVIDER=ollama`** (default in `.env.example`: **`llava:v1.6`** for vision-capable extraction). |
+| `OLLAMA_MODEL`               | Model tag when **`AI_PROVIDER=ollama`** (default in `.env.example`: **`llava:7b`** for vision-capable extraction). |
 | `CORS_ORIGINS`               | JSON array of allowed browser origins; include both `http://localhost:3000` and `http://127.0.0.1:3000` if you switch hosts. Missing origin causes **Failed to fetch** on API calls. |
 | `EXTRACTION_ENABLED`         | Optional. Default `true`. Set `false` to turn off **`/extraction/*`** (e.g. prod without vision keys). |
 | `EXTRACTION_MAX_PAGES`       | Optional. Cap pages per analyze job (default **24**). |
@@ -159,7 +159,7 @@ The app will be available at `http://localhost:3000`.
 | `NEXT_PUBLIC_API_URL`           | Optional. Omit locally to use `/backend-api` proxy to FastAPI. Set for production (full URL, no trailing slash). For **long NDJSON extraction streams**, pointing the browser **directly** at the API (not through the Next.js rewrite) avoids some proxies buffering chunks until the response ends, so the **progress bar** updates smoothly. |
 | `NEXT_PUBLIC_EXTRACTION_MODE`   | Set to **`local_ollama`** to run **AI extract** in the **browser** against **Ollama on the user’s machine** (`http://127.0.0.1:11434` by default). PDF/pages are rasterized client-side; **`POST /extraction/commit`** still saves to the bank. Omit or leave unset to use the server **`/extraction/analyze-stream`** (302.ai / server Ollama). |
 | `NEXT_PUBLIC_OLLAMA_BASE_URL`   | OpenAI-compatible base URL for local extraction (default **`https://127.0.0.1:8443`** — local HTTPS proxy; use **`http://127.0.0.1:11434`** only with **`http://localhost:3000`** and direct Ollama). On **HTTPS** deploys, the app also **rewrites** legacy `http://127.0.0.1:11434` to the HTTPS proxy at runtime so mixed content isn’t blocked. |
-| `NEXT_PUBLIC_OLLAMA_MODEL`      | Ollama model tag for vision extraction (default **`llava:v1.6`**). Run `ollama pull llava:v1.6`. Override (e.g. `qwen2.5vl`) if you prefer another vision model. |
+| `NEXT_PUBLIC_OLLAMA_MODEL`      | Ollama model tag for vision extraction (default **`llava:7b`**). Run `ollama pull llava:7b`. Override (e.g. `qwen2.5vl`) if you prefer another vision model. |
 | `NEXT_PUBLIC_OLLAMA_RASTER_DPI` | PDF/image raster DPI when the UI does not send **`dpi`** (local Ollama path; default **128**). Server-side extraction still uses **`dpi: 160`** from the wizard. |
 | `NEXT_PUBLIC_OLLAMA_MAX_EDGE` | Longest edge in pixels when **high accuracy** is off (default **1280**). |
 | `NEXT_PUBLIC_OLLAMA_MAX_EDGE_HIGH` | Longest edge when **high accuracy** is on (default **2560**). |
