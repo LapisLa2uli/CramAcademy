@@ -128,7 +128,7 @@ The app will be available at `http://localhost:3000`.
 | `OPENAI_BASE_URL`            | `https://api.302.ai/v1`                  |
 | `OPENAI_MODEL`               | `gpt-5.4-mini-2026-03-17` (default)     |
 | `OLLAMA_BASE_URL`            | `http://localhost:11434`                 |
-| `OLLAMA_MODEL`               | `llama3` (default)                       |
+| `OLLAMA_MODEL`               | Model tag when **`AI_PROVIDER=ollama`** (default in `.env.example`: **`llava:v1.6`** for vision-capable extraction). |
 | `CORS_ORIGINS`               | JSON array of allowed browser origins; include both `http://localhost:3000` and `http://127.0.0.1:3000` if you switch hosts. Missing origin causes **Failed to fetch** on API calls. |
 | `EXTRACTION_ENABLED`         | Optional. Default `true`. Set `false` to turn off **`/extraction/*`** (e.g. prod without vision keys). |
 | `EXTRACTION_MAX_PAGES`       | Optional. Cap pages per analyze job (default **24**). |
@@ -159,13 +159,18 @@ The app will be available at `http://localhost:3000`.
 | `NEXT_PUBLIC_API_URL`           | Optional. Omit locally to use `/backend-api` proxy to FastAPI. Set for production (full URL, no trailing slash). For **long NDJSON extraction streams**, pointing the browser **directly** at the API (not through the Next.js rewrite) avoids some proxies buffering chunks until the response ends, so the **progress bar** updates smoothly. |
 | `NEXT_PUBLIC_EXTRACTION_MODE`   | Set to **`local_ollama`** to run **AI extract** in the **browser** against **Ollama on the user’s machine** (`http://127.0.0.1:11434` by default). PDF/pages are rasterized client-side; **`POST /extraction/commit`** still saves to the bank. Omit or leave unset to use the server **`/extraction/analyze-stream`** (302.ai / server Ollama). |
 | `NEXT_PUBLIC_OLLAMA_BASE_URL`   | OpenAI-compatible base URL for local extraction (default **`https://127.0.0.1:8443`** — local HTTPS proxy; use **`http://127.0.0.1:11434`** only with **`http://localhost:3000`** and direct Ollama). On **HTTPS** deploys, the app also **rewrites** legacy `http://127.0.0.1:11434` to the HTTPS proxy at runtime so mixed content isn’t blocked. |
-| `NEXT_PUBLIC_OLLAMA_MODEL`      | Ollama model tag for vision extraction (default **`qwen2.5vl`**). Run `ollama pull` for that tag. |
+| `NEXT_PUBLIC_OLLAMA_MODEL`      | Ollama model tag for vision extraction (default **`llava:v1.6`**). Run `ollama pull llava:v1.6`. Override (e.g. `qwen2.5vl`) if you prefer another vision model. |
+| `NEXT_PUBLIC_OLLAMA_RASTER_DPI` | PDF/image raster DPI when the UI does not send **`dpi`** (local Ollama path; default **128**). Server-side extraction still uses **`dpi: 160`** from the wizard. |
+| `NEXT_PUBLIC_OLLAMA_MAX_EDGE` | Longest edge in pixels when **high accuracy** is off (default **1280**). |
+| `NEXT_PUBLIC_OLLAMA_MAX_EDGE_HIGH` | Longest edge when **high accuracy** is on (default **2560**). |
 | `NEXT_PUBLIC_OLLAMA_IMAGE_DETAIL` | **`low`** (default) or **`high`**. `low` sends smaller vision inputs (less RAM/time); `high` can improve accuracy on dense scans. |
-| `NEXT_PUBLIC_OLLAMA_PAGE_CONCURRENCY` | How many pages are processed **in parallel** (default **`2`**). Use **`1`** if Ollama exhausts RAM or CPU. Max **8**. |
+| `NEXT_PUBLIC_OLLAMA_PAGE_CONCURRENCY` | How many pages are processed **in parallel** (default **`1`**). Raise to **`2`** or higher only if you have headroom; high values can crash the Ollama runner. Max **8**. |
 | `NEXT_PUBLIC_OLLAMA_CHAT_TIMEOUT_MS` | Per-chat timeout when there is **no** job-level browser timeout (e.g. **No browser time limit** enabled). Default **1800000** (30 minutes). |
 | `NEXT_PUBLIC_EXTRACTION_USE_JSON_SCHEMA` | Optional. **`true`** only if your Ollama version accepts OpenAI **`json_schema`** `response_format`; otherwise omit or **`false`** (uses `json_object`). |
 
 **User-local Ollama (production site + browser):** The app origin (e.g. `https://your-app.vercel.app`) is **different** from `http://127.0.0.1`, so the browser must be allowed to call Ollama. Configure Ollama’s **CORS / allowed origins** (e.g. `OLLAMA_ORIGINS` or the option your Ollama version uses) to include your **exact** site origin. Only add origins you trust; a wide-open policy while Ollama is running is a security risk. Alternatively, run **nginx** on your machine as a reverse proxy to Ollama with explicit CORS for `http://localhost:3000` and `https://cram-academy.vercel.app` — see [`docs/nginx-ollama-proxy.conf`](docs/nginx-ollama-proxy.conf) (listen `127.0.0.1:8080`; set `NEXT_PUBLIC_OLLAMA_BASE_URL=http://127.0.0.1:8080`).
+
+**If Ollama returns 500 / “model runner has unexpectedly stopped”:** Usually VRAM, OOM, or too much parallel load. Try **`NEXT_PUBLIC_OLLAMA_PAGE_CONCURRENCY=1`**, lower **`NEXT_PUBLIC_OLLAMA_MAX_EDGE`** / **`NEXT_PUBLIC_OLLAMA_RASTER_DPI`**, set **`OLLAMA_NUM_PARALLEL=1`** in the environment where **`ollama serve`** runs, and check Ollama server logs.
 
 **HTTPS vs HTTP:** If the app is loaded over **`https://`** (e.g. Vercel), the browser **blocks** `fetch` to **`http://`** URLs to Ollama (mixed content). Options: (1) Use **`http://localhost:3000`** for local dev. (2) Terminate **HTTPS** on your machine and proxy to Ollama, then set **`NEXT_PUBLIC_OLLAMA_BASE_URL=https://127.0.0.1:8443`**. **Quickest (no nginx):** from **`frontend/`**, run **`npm run ollama-https-proxy`** — serves **`https://127.0.0.1:8443`** using TLS files under **`.local/ollama-https/`** and [`scripts/ollama-https-proxy.mjs`](scripts/ollama-https-proxy.mjs). The first visit may show a **self-signed certificate** warning; proceed for localhost only. **Alternative:** nginx — [`docs/nginx-ollama-proxy-https.conf`](docs/nginx-ollama-proxy-https.conf). (3) A tunnel (e.g. **ngrok** HTTPS) to `11434`. Ollama itself listens on HTTP; TLS is handled by the proxy or tunnel.
 

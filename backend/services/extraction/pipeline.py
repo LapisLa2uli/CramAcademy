@@ -105,7 +105,7 @@ async def iter_analyze(
     if settings.ai_provider == "ollama":
         logger.warning(
             "Server-side extraction uses Ollama — ensure EXTRACTION_MODEL / OLLAMA_MODEL is a "
-            "vision-capable tag (e.g. qwen2.5vl), not a text-only model like llama3."
+            "vision-capable tag (e.g. llava:v1.6), not a text-only model like llama3."
         )
 
     total = len(pages)

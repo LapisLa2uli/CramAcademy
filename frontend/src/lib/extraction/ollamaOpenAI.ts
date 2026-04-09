@@ -64,6 +64,35 @@ function envChatTimeoutMs(): number {
  * short default per-call timeout — that used to abort every vision request at 180s while Ollama
  * was still working.
  */
+function formatOllamaHttpError(status: number, bodyText: string): string {
+  const snippet = bodyText.slice(0, 400);
+  if (status !== 500) {
+    return `Ollama chat failed (${status}): ${snippet}`;
+  }
+  let msg = snippet;
+  try {
+    const j = JSON.parse(bodyText) as { error?: { message?: string } };
+    const m = j?.error?.message;
+    if (typeof m === "string" && m.length) msg = m;
+  } catch {
+    /* keep snippet */
+  }
+  const lower = msg.toLowerCase();
+  const runnerHint =
+    lower.includes("model runner") ||
+    lower.includes("runner has unexpectedly") ||
+    lower.includes("resource limitation");
+  if (runnerHint) {
+    return (
+      `Ollama chat failed (${status}): ${msg.slice(0, 300)} ` +
+      "— Often VRAM/OOM or too much parallel load. Try NEXT_PUBLIC_OLLAMA_PAGE_CONCURRENCY=1, " +
+      "smaller NEXT_PUBLIC_OLLAMA_MAX_EDGE / RASTER_DPI, set OLLAMA_NUM_PARALLEL=1 where Ollama runs, " +
+      "and check `ollama` server logs."
+    );
+  }
+  return `Ollama chat failed (${status}): ${msg.slice(0, 400)}`;
+}
+
 function resolveChatAbortSignal(params: {
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -124,7 +153,7 @@ export async function ollamaChatCompletion(params: {
 
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    throw new Error(`Ollama chat failed (${res.status}): ${text.slice(0, 500)}`);
+    throw new Error(formatOllamaHttpError(res.status, text));
   }
   const data = (await res.json()) as {
     choices?: Array<{ message?: { content?: string | null } }>;

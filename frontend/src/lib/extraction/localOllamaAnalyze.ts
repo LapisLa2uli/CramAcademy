@@ -60,10 +60,29 @@ function resolveOllamaBaseUrl(): string {
 function parsePageConcurrency(): number {
   const raw =
     typeof process !== "undefined" && process.env?.NEXT_PUBLIC_OLLAMA_PAGE_CONCURRENCY?.trim();
-  if (!raw) return 2;
+  if (!raw) return 1;
   const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n)) return 2;
+  if (!Number.isFinite(n)) return 1;
   return Math.min(8, Math.max(1, n));
+}
+
+function parseEnvPositiveInt(envKey: string, fallback: number): number {
+  if (typeof process === "undefined") return fallback;
+  const v = process.env[envKey]?.trim();
+  if (!v) return fallback;
+  const n = Number.parseInt(v, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/** Defaults tuned for speed / lower VRAM when high_accuracy is off. */
+function defaultRasterDpi(): number {
+  return parseEnvPositiveInt("NEXT_PUBLIC_OLLAMA_RASTER_DPI", 128);
+}
+
+function defaultMaxEdge(highAccuracy: boolean): number {
+  return highAccuracy
+    ? parseEnvPositiveInt("NEXT_PUBLIC_OLLAMA_MAX_EDGE_HIGH", 2560)
+    : parseEnvPositiveInt("NEXT_PUBLIC_OLLAMA_MAX_EDGE", 1280);
 }
 
 function parseImageDetail(): "low" | "high" {
@@ -83,7 +102,7 @@ export function getLocalOllamaConfig(): {
   const model =
     (typeof process !== "undefined" &&
       process.env?.NEXT_PUBLIC_OLLAMA_MODEL?.trim()) ||
-    "qwen2.5vl";
+    "llava:v1.6";
   const useJsonSchema =
     (typeof process !== "undefined" &&
       process.env?.NEXT_PUBLIC_EXTRACTION_USE_JSON_SCHEMA?.trim()) === "true";
@@ -116,12 +135,12 @@ export async function runLocalOllamaAnalyze(
   }
 ): Promise<ExtractionAnalyzeResponse> {
   const maxPages = options.max_pages ?? 24;
-  const dpi = options.dpi ?? 160;
   const highAccuracy = options.high_accuracy ?? false;
   const twoStage = options.two_stage ?? false;
   const layoutOnly = options.layout_only ?? false;
 
-  const maxEdge = highAccuracy ? 2560 : 1920;
+  const dpi = options.dpi ?? defaultRasterDpi();
+  const maxEdge = defaultMaxEdge(highAccuracy);
   const effectiveTwoStage = twoStage && !layoutOnly;
 
   /** Max Ollama calls per page we reserve progress for (layout + main + optional validation fix). */

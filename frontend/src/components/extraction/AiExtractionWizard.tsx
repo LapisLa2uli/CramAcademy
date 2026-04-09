@@ -129,7 +129,7 @@ export default function AiExtractionWizard() {
     try {
       const res = await api.extraction.analyze(files, {
         max_pages: 24,
-        dpi: 160,
+        ...(isClientOllamaExtractionEnabled() ? {} : { dpi: 160 }),
         high_accuracy: highAccuracy,
         two_stage: extractionMode === "layout" ? false : twoStage,
         layout_only: extractionMode === "layout",
@@ -179,7 +179,7 @@ export default function AiExtractionWizard() {
     try {
       const f = await pagePngToFile(currentPage);
       const res = await api.extraction.reanalyzePage(f, {
-        dpi: 160,
+        ...(isClientOllamaExtractionEnabled() ? {} : { dpi: 160 }),
         high_accuracy: highAccuracy,
         two_stage: extractionMode === "layout" ? false : twoStage,
         layout_only: extractionMode === "layout",
