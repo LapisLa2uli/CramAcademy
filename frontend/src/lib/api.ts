@@ -429,6 +429,8 @@ export const api = {
       opts?: {
         max_pages?: number;
         dpi?: number;
+        /** Local Ollama only: parallel pages (1–8). */
+        page_concurrency?: number;
         high_accuracy?: boolean;
         two_stage?: boolean;
         /** Layout scan only (bounding boxes); no full text/structure extraction. */
@@ -447,6 +449,7 @@ export const api = {
         return runLocalOllamaAnalyze(files, {
           max_pages: maxPages,
           dpi: opts?.dpi,
+          page_concurrency: opts?.page_concurrency,
           high_accuracy: opts?.high_accuracy,
           two_stage: opts?.two_stage,
           layout_only: opts?.layout_only,
@@ -800,6 +803,7 @@ export const api = {
       file: File,
       opts?: {
         dpi?: number;
+        page_concurrency?: number;
         high_accuracy?: boolean;
         two_stage?: boolean;
         layout_only?: boolean;
@@ -811,6 +815,7 @@ export const api = {
         return runLocalOllamaAnalyze([file], {
           max_pages: 1,
           dpi: opts?.dpi,
+          page_concurrency: opts?.page_concurrency,
           high_accuracy: opts?.high_accuracy,
           two_stage: opts?.two_stage,
           layout_only: opts?.layout_only,

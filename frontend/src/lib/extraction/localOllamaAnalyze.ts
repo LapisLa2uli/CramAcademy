@@ -79,6 +79,14 @@ function defaultRasterDpi(): number {
   return parseEnvPositiveInt("NEXT_PUBLIC_OLLAMA_RASTER_DPI", 128);
 }
 
+/** Initial values for local-Ollama UI (env-based; user can override in the extraction wizard). */
+export function getLocalOllamaRasterDefaults(): { rasterDpi: number; pageConcurrency: number } {
+  return {
+    rasterDpi: defaultRasterDpi(),
+    pageConcurrency: parsePageConcurrency(),
+  };
+}
+
 function defaultMaxEdge(highAccuracy: boolean): number {
   return highAccuracy
     ? parseEnvPositiveInt("NEXT_PUBLIC_OLLAMA_MAX_EDGE_HIGH", 2560)
@@ -127,6 +135,8 @@ export async function runLocalOllamaAnalyze(
   options: {
     max_pages?: number;
     dpi?: number;
+    /** Parallel pages; 1–8. Omit to use env `NEXT_PUBLIC_OLLAMA_PAGE_CONCURRENCY` / defaults. */
+    page_concurrency?: number;
     high_accuracy?: boolean;
     two_stage?: boolean;
     layout_only?: boolean;
@@ -185,8 +195,12 @@ export async function runLocalOllamaAnalyze(
     }
   }
 
-  const { baseUrl, model, useJsonSchema, pageConcurrency: concurrency, imageDetail } =
+  const { baseUrl, model, useJsonSchema, pageConcurrency: envConcurrency, imageDetail } =
     getLocalOllamaConfig();
+  const concurrency =
+    options.page_concurrency != null
+      ? Math.min(8, Math.max(1, Math.floor(options.page_concurrency)))
+      : envConcurrency;
 
   const visionSlotTotal = n * maxVisionSubstepsPerPage;
   let visionSubstepsDone = 0;

@@ -23,6 +23,7 @@ import ExtractionReviewOverlay from "./ExtractionReviewOverlay";
 import LayoutTemplatePanel from "./LayoutTemplatePanel";
 import {
   getLocalOllamaConfig,
+  getLocalOllamaRasterDefaults,
   isClientOllamaExtractionEnabled,
 } from "@/lib/extraction/localOllamaAnalyze";
 import { localOllamaBlockedFromHttpsPage } from "@/lib/extraction/ollamaOpenAI";
@@ -62,6 +63,11 @@ export default function AiExtractionWizard() {
   const [highAccuracy, setHighAccuracy] = useState(false);
   const [twoStage, setTwoStage] = useState(false);
   const [noBrowserTimeLimit, setNoBrowserTimeLimit] = useState(false);
+  /** Local Ollama: PDF/image raster DPI and parallel page workers (defaults from env). */
+  const [localOllamaDpi, setLocalOllamaDpi] = useState(() => getLocalOllamaRasterDefaults().rasterDpi);
+  const [localOllamaConcurrency, setLocalOllamaConcurrency] = useState(
+    () => getLocalOllamaRasterDefaults().pageConcurrency
+  );
   const [regenBusy, setRegenBusy] = useState(false);
   const [pageRegenHint, setPageRegenHint] = useState<string | null>(null);
   const [bboxOverrides, setBboxOverrides] = useState<Record<string, ExtractionNormRect>>({});
@@ -129,7 +135,9 @@ export default function AiExtractionWizard() {
     try {
       const res = await api.extraction.analyze(files, {
         max_pages: 24,
-        ...(isClientOllamaExtractionEnabled() ? {} : { dpi: 160 }),
+        ...(isClientOllamaExtractionEnabled()
+          ? { dpi: localOllamaDpi, page_concurrency: localOllamaConcurrency }
+          : { dpi: 160 }),
         high_accuracy: highAccuracy,
         two_stage: extractionMode === "layout" ? false : twoStage,
         layout_only: extractionMode === "layout",
@@ -179,7 +187,9 @@ export default function AiExtractionWizard() {
     try {
       const f = await pagePngToFile(currentPage);
       const res = await api.extraction.reanalyzePage(f, {
-        ...(isClientOllamaExtractionEnabled() ? {} : { dpi: 160 }),
+        ...(isClientOllamaExtractionEnabled()
+          ? { dpi: localOllamaDpi, page_concurrency: localOllamaConcurrency }
+          : { dpi: 160 }),
         high_accuracy: highAccuracy,
         two_stage: extractionMode === "layout" ? false : twoStage,
         layout_only: extractionMode === "layout",
@@ -220,7 +230,17 @@ export default function AiExtractionWizard() {
     } finally {
       setRegenBusy(false);
     }
-  }, [currentPage, data, highAccuracy, twoStage, pageIdx, pages.length, extractionMode]);
+  }, [
+    currentPage,
+    data,
+    highAccuracy,
+    twoStage,
+    pageIdx,
+    pages.length,
+    extractionMode,
+    localOllamaDpi,
+    localOllamaConcurrency,
+  ]);
 
   const updateSetContext = useCallback((setIndex: number, context_text: string) => {
     setEditableSets((prev) => {
@@ -478,6 +498,51 @@ export default function AiExtractionWizard() {
                 </span>
               </label>
             </div>
+            {localOllamaInfo ? (
+              <div className="rounded-lg border border-gray-200 bg-gray-50/80 px-3 py-2 space-y-3">
+                <p className="font-medium text-gray-900 text-sm">Local Ollama rendering</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block text-xs text-gray-700">
+                    <span className="font-medium text-gray-900">Raster DPI</span>
+                    <span className="block text-gray-500 mb-1">
+                      PDF/page rasterization (higher = sharper, slower, more VRAM).
+                    </span>
+                    <input
+                      type="number"
+                      min={72}
+                      max={400}
+                      step={1}
+                      className="input-field text-sm py-1.5 w-full max-w-[140px]"
+                      value={localOllamaDpi}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        if (!Number.isFinite(v)) return;
+                        setLocalOllamaDpi(Math.min(400, Math.max(72, Math.round(v))));
+                      }}
+                    />
+                  </label>
+                  <label className="block text-xs text-gray-700">
+                    <span className="font-medium text-gray-900">Parallel pages</span>
+                    <span className="block text-gray-500 mb-1">
+                      How many pages Ollama processes at once (1 is safest for GPU memory).
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={8}
+                      step={1}
+                      className="input-field text-sm py-1.5 w-full max-w-[140px]"
+                      value={localOllamaConcurrency}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        if (!Number.isFinite(v)) return;
+                        setLocalOllamaConcurrency(Math.min(8, Math.max(1, Math.floor(v))));
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : null}
             <label className="flex items-start gap-2 cursor-pointer">
               <input
                 type="checkbox"
