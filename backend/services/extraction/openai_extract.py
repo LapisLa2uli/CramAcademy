@@ -137,7 +137,15 @@ def _validate_page_payload(data: dict[str, Any]) -> list[str]:
                     continue
                 if q.get("type") == "mcq":
                     opts = q.get("options")
-                    if not isinstance(opts, list) or len(opts) < 2:
+                    # Continuation questions may have their stem or options on
+                    # an adjacent page — skip the min-option check in that case.
+                    is_continuation = bool(
+                        q.get("continued_from_previous_page")
+                        or q.get("continues_on_next_page")
+                    )
+                    if not is_continuation and (
+                        not isinstance(opts, list) or len(opts) < 2
+                    ):
                         issues.append(
                             f"sets[{si}] Q{q.get('question_index', qi)} MCQ needs at least 2 options."
                         )

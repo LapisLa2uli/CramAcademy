@@ -14,6 +14,18 @@ export type ExtractionActiveVisionTask = {
   inference: ExtractionInferencePhase;
 };
 
+/** One cross-page merge that the pipeline performed on multi-page sets. */
+export type ExtractionStitchEvent = {
+  /** 0-based global index of the surviving (merged) set. */
+  targetSetIndex: number;
+  /** 0-based page indices pulled into the merged set (sorted ascending). */
+  sourcePageIndices: number[];
+  /** Which continuation flag(s) triggered the merge. */
+  reason: string;
+  /** True when a single question was joined across the page break. */
+  questionBridge: boolean;
+};
+
 export type ExtractionDebugSnapshot = {
   /** PDF rasterization progress (1-based page indices implied by completed/total). */
   raster: { completed: number; total: number } | null;
@@ -21,6 +33,8 @@ export type ExtractionDebugSnapshot = {
   activeVision: ExtractionActiveVisionTask[];
   /** Server analyze-stream NDJSON status phase (merge | cross_page | encode). */
   serverPhase: string | null;
+  /** Multi-page stitching performed during merge, in the order it happened. */
+  stitches: ExtractionStitchEvent[];
 };
 
 export function createEmptyExtractionDebugSnapshot(): ExtractionDebugSnapshot {
@@ -28,6 +42,7 @@ export function createEmptyExtractionDebugSnapshot(): ExtractionDebugSnapshot {
     raster: null,
     activeVision: [],
     serverPhase: null,
+    stitches: [],
   };
 }
 

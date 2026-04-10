@@ -180,6 +180,7 @@ export async function runLocalOllamaAnalyze(
       raster: snap.raster,
       activeVision: [...activeVision.values()],
       serverPhase: snap.serverPhase,
+      stitches: [...snap.stitches],
     });
   };
 
@@ -305,9 +306,32 @@ export async function runLocalOllamaAnalyze(
     }))
   );
 
+  // Surface any multi-page stitching that happened so the debug panel can
+  // show which pages were glued together. Done before the final progress
+  // report so the UI has a chance to render the updated snapshot.
+  if (merged.stitchEvents.length > 0) {
+    for (const ev of merged.stitchEvents) {
+      snap.stitches.push({
+        targetSetIndex: ev.target_set_index,
+        sourcePageIndices: [...ev.source_page_indices],
+        reason: ev.reason,
+        questionBridge: ev.question_bridge,
+      });
+    }
+    emitDebug();
+  }
+
   const warn: string[] = [];
   for (const r of pageRaw) {
     warn.push(...r.warn);
+  }
+  for (const ev of merged.stitchEvents) {
+    const pages1 = ev.source_page_indices.map((p) => p + 1);
+    warn.push(
+      `Stitched multi-page set ${ev.target_set_index + 1} across pages ${pages1.join(", ")}` +
+        (ev.question_bridge ? " (question spanned page break)" : "") +
+        "."
+    );
   }
   warn.push(...collectExtractionWarnings(merged.sets));
 

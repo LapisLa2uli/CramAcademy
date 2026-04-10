@@ -151,7 +151,33 @@ async def iter_analyze(
     # close “idle” connections if no bytes are sent for tens of seconds.
     yield {"type": "status", "phase": "merge"}
 
-    pages_out, sets_out = merge_page_results(page_results)
+    pages_out, sets_out, stitch_events = merge_page_results(page_results)
+    for ev in stitch_events:
+        pages_1based = [p + 1 for p in ev["source_page_indices"]]
+        logger.info(
+            "extraction stitch: merged set %s across pages %s (reason=%s, question_bridge=%s)",
+            ev["target_set_index"],
+            pages_1based,
+            ev["reason"],
+            ev["question_bridge"],
+        )
+        warn.append(
+            "Stitched multi-page set "
+            + str(ev["target_set_index"] + 1)
+            + " across pages "
+            + ", ".join(str(p) for p in pages_1based)
+            + (" (question spanned page break)" if ev["question_bridge"] else "")
+            + "."
+        )
+        yield {
+            "type": "stitch",
+            "data": {
+                "target_set_index": ev["target_set_index"],
+                "source_page_indices": ev["source_page_indices"],
+                "reason": ev["reason"],
+                "question_bridge": ev["question_bridge"],
+            },
+        }
     warn.extend(collect_warnings(sets_out))
 
     if (

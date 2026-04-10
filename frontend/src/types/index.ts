@@ -217,6 +217,8 @@ export interface ExtractionQuestionDraft {
   answer: string;
   explanation?: string | null;
   rubric?: Record<string, unknown> | null;
+  continued_from_previous_page?: boolean;
+  continues_on_next_page?: boolean;
 }
 
 export interface ExtractionSetDraft {
@@ -224,6 +226,9 @@ export interface ExtractionSetDraft {
   context_text: string;
   shared_stems: { applies_to_question_numbers: number[]; text: string }[];
   questions: ExtractionQuestionDraft[];
+  continued_from_previous_page?: boolean;
+  continues_on_next_page?: boolean;
+  source_page_indices?: number[];
 }
 
 export interface ExtractionAnalyzeResponse {

@@ -570,6 +570,20 @@ export const api = {
       let resultB64Parts: string[] = [];
       let sawProgress = false;
       let lastTotal = 0;
+      // Cross-page stitch events accumulate across the stream so the debug panel
+      // can show every merge the backend performed, not just the latest one.
+      const stitches: import("@/lib/extraction/extractionDebug").ExtractionStitchEvent[] =
+        [];
+      let latestServerPhase: string | null = null;
+      const emitDebug = () => {
+        if (!opts?.onExtractionDebug) return;
+        opts.onExtractionDebug({
+          raster: null,
+          activeVision: [],
+          serverPhase: latestServerPhase,
+          stitches: [...stitches],
+        });
+      };
 
       const flushLine = (line: string) => {
         const t = line.trim();
@@ -595,12 +609,31 @@ export const api = {
         if (ev.type === "status") {
           const raw = ev as unknown as { phase?: unknown };
           const phase = typeof raw.phase === "string" ? raw.phase : null;
-          if (phase && opts?.onExtractionDebug) {
-            opts.onExtractionDebug({
-              raster: null,
-              activeVision: [],
-              serverPhase: phase,
+          if (phase) {
+            latestServerPhase = phase;
+            emitDebug();
+          }
+          return;
+        }
+        if (ev.type === "stitch" && ev.data && typeof ev.data === "object") {
+          const d = ev.data as Record<string, unknown>;
+          const targetSetIndex =
+            typeof d.target_set_index === "number" ? d.target_set_index : -1;
+          const sourcePages = Array.isArray(d.source_page_indices)
+            ? (d.source_page_indices as unknown[])
+                .filter((n): n is number => typeof n === "number")
+                .sort((a, b) => a - b)
+            : [];
+          const reason = typeof d.reason === "string" ? d.reason : "";
+          const questionBridge = d.question_bridge === true;
+          if (targetSetIndex >= 0 && sourcePages.length >= 2) {
+            stitches.push({
+              targetSetIndex,
+              sourcePageIndices: sourcePages,
+              reason,
+              questionBridge,
             });
+            emitDebug();
           }
           return;
         }

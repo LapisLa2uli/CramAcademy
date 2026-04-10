@@ -43,6 +43,8 @@ class ExtractionQuestionDraft(BaseModel):
     answer: str = ""
     explanation: Optional[str] = None
     rubric: Optional[dict] = None
+    continued_from_previous_page: bool = False
+    continues_on_next_page: bool = False
 
 
 class SharedStemDraft(BaseModel):
@@ -55,6 +57,9 @@ class ExtractionSetDraft(BaseModel):
     context_text: str = ""
     shared_stems: list[SharedStemDraft] = Field(default_factory=list)
     questions: list[ExtractionQuestionDraft] = Field(default_factory=list)
+    continued_from_previous_page: bool = False
+    continues_on_next_page: bool = False
+    source_page_indices: list[int] = Field(default_factory=list)
 
 
 class ExtractionPage(BaseModel):

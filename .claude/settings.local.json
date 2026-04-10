@@ -4,7 +4,13 @@
       "Bash(claude:*)",
       "Bash(npm update:*)",
       "Skill(update-config)",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "Bash(python -c \"from services.extraction import normalize, latex_normalize; from schemas.extraction import ExtractionSetDraft, ExtractionQuestionDraft; print\\('imports ok'\\)\")",
+      "Bash(python -c ':*)",
+      "Bash(python -m py_compile services/extraction/normalize.py services/extraction/latex_normalize.py services/extraction/openai_extract.py schemas/extraction.py prompts/extraction.py)",
+      "Bash(python -m py_compile services/extraction/normalize.py services/extraction/pipeline.py)",
+      "Bash(npx tsc:*)",
+      "Bash(python -m py_compile services/extraction/normalize.py services/extraction/pipeline.py schemas/extraction.py)"
     ]
   }
 }

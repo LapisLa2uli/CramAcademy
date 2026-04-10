@@ -83,8 +83,36 @@ function ExtractionDebugPanel({ snap }: { snap: ExtractionDebugSnapshot | null }
           ) : snap.raster &&
             snap.raster.total > 0 &&
             snap.raster.completed >= snap.raster.total &&
-            !snap.serverPhase ? (
+            !snap.serverPhase &&
+            snap.stitches.length === 0 ? (
             <p className="text-gray-500">No in-flight Ollama calls (between steps or merging).</p>
+          ) : null}
+          {snap.stitches.length > 0 ? (
+            <div className="pt-1 border-t border-dashed border-gray-300 space-y-1">
+              <p className="text-gray-500 font-sans text-[11px] uppercase tracking-wide">
+                Multi-page stitching ({snap.stitches.length})
+              </p>
+              <ul className="list-none space-y-1 pl-0 m-0">
+                {snap.stitches.map((s, i) => {
+                  const pages1 = s.sourcePageIndices.map((p) => p + 1);
+                  return (
+                    <li key={`stitch-${i}-${s.targetSetIndex}`}>
+                      Set {s.targetSetIndex + 1}: merged pages{" "}
+                      <span className="text-gray-900">{pages1.join(" → ")}</span>
+                      {s.questionBridge ? (
+                        <span className="text-gray-600">
+                          {" "}
+                          · question spanned page break
+                        </span>
+                      ) : null}
+                      {s.reason ? (
+                        <span className="text-gray-500"> · {s.reason}</span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           ) : null}
         </>
       )}
