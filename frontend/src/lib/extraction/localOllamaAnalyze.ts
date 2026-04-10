@@ -1,5 +1,11 @@
 import { collectExtractionWarnings } from "@/lib/extraction/collectExtractionWarnings";
-import { extractPageLocal } from "@/lib/extraction/extractPageLocal";
+import {
+  createEmptyExtractionDebugSnapshot,
+  isExtractionDebugStreamEnabled,
+  type ExtractionActiveVisionTask,
+  type ExtractionDebugSnapshot,
+} from "@/lib/extraction/extractionDebug";
+import { extractPageLocal, type VisionActivityEvent, type VisionInferenceEvent } from "@/lib/extraction/extractPageLocal";
 import { mergePageResults } from "@/lib/extraction/mergePageResults";
 import { preparePagesFromFiles } from "@/lib/extraction/preparePagesFromFiles";
 import { extractPdfPageTexts } from "@/lib/extraction/extractPdfTextHints";
@@ -141,6 +147,8 @@ export async function runLocalOllamaAnalyze(
     two_stage?: boolean;
     layout_only?: boolean;
     onProgress?: (completed: number, total: number) => void;
+    /** Debug panel: raster + in-flight vision steps (page + step + inference). */
+    onExtractionDebug?: (snapshot: ExtractionDebugSnapshot) => void;
     signal?: AbortSignal;
   }
 ): Promise<ExtractionAnalyzeResponse> {
@@ -163,11 +171,59 @@ export async function runLocalOllamaAnalyze(
 
   reportProgress(0, 1);
 
+  const debugCb = options.onExtractionDebug;
+  const snap = createEmptyExtractionDebugSnapshot();
+  const activeVision = new Map<string, ExtractionActiveVisionTask>();
+
+  const emitDebug = () => {
+    debugCb?.({
+      raster: snap.raster,
+      activeVision: [...activeVision.values()],
+      serverPhase: snap.serverPhase,
+    });
+  };
+
+  const onVisionActivity =
+    debugCb != null
+      ? (ev: VisionActivityEvent) => {
+          const key = `${ev.pageIndex}:${ev.step}`;
+          if (ev.phase === "start") {
+            activeVision.set(key, {
+              pageIndex: ev.pageIndex,
+              step: ev.step,
+              inference: "waiting",
+            });
+          } else {
+            activeVision.delete(key);
+          }
+          emitDebug();
+        }
+      : undefined;
+
+  const onInferencePhase =
+    debugCb != null
+      ? (ev: VisionInferenceEvent) => {
+          const key = `${ev.pageIndex}:${ev.step}`;
+          const cur = activeVision.get(key);
+          if (cur) {
+            cur.inference = ev.inference;
+            activeVision.set(key, cur);
+          }
+          emitDebug();
+        }
+      : undefined;
+
+  const useInferenceStream = debugCb != null && isExtractionDebugStreamEnabled();
+
   const pages = await preparePagesFromFiles(files, {
     maxPages,
     dpi,
     maxEdge,
     onPagePrepared: ({ completed, total }) => {
+      if (debugCb) {
+        snap.raster = { completed, total };
+        emitDebug();
+      }
       const prepTotal = total * (1 + maxVisionSubstepsPerPage);
       reportProgress(completed, prepTotal);
     },
@@ -223,6 +279,9 @@ export async function runLocalOllamaAnalyze(
       layoutOnly,
       signal: options.signal,
       onVisionSubstep,
+      onVisionActivity,
+      onInferencePhase,
+      useInferenceStream,
     });
     return {
       pageIndex: p.pageIndex,

@@ -22,6 +22,11 @@ import SubjectPicker from "@/components/SubjectPicker";
 import ExtractionReviewOverlay from "./ExtractionReviewOverlay";
 import LayoutTemplatePanel from "./LayoutTemplatePanel";
 import {
+  isExtractionDebugUiEnabled,
+  type ExtractionDebugSnapshot,
+  type ExtractionVisionStep,
+} from "@/lib/extraction/extractionDebug";
+import {
   getLocalOllamaConfig,
   getLocalOllamaRasterDefaults,
   isClientOllamaExtractionEnabled,
@@ -30,6 +35,62 @@ import { localOllamaBlockedFromHttpsPage } from "@/lib/extraction/ollamaOpenAI";
 
 type Step = "upload" | "analyze" | "review" | "done";
 type ExtractionMode = "full" | "layout";
+
+function visionStepLabel(step: ExtractionVisionStep): string {
+  switch (step) {
+    case "layout_only":
+      return "Layout scan";
+    case "layout":
+      return "Layout pass";
+    case "extract":
+      return "Extract";
+    case "fix":
+      return "Validation fix";
+    default:
+      return step;
+  }
+}
+
+function ExtractionDebugPanel({ snap }: { snap: ExtractionDebugSnapshot | null }) {
+  return (
+    <div className="rounded border border-dashed border-gray-300 bg-gray-50 p-3 font-mono text-xs text-gray-800 space-y-1.5">
+      <p className="text-gray-500 font-sans text-[11px] uppercase tracking-wide">Model debug</p>
+      {!snap ? (
+        <p className="text-gray-600">Starting…</p>
+      ) : (
+        <>
+          {snap.raster ? (
+            <p>
+              Raster: {snap.raster.completed} / {snap.raster.total} pages
+            </p>
+          ) : null}
+          {snap.serverPhase ? (
+            <p>
+              Server phase: <span className="text-gray-900">{snap.serverPhase}</span>
+            </p>
+          ) : null}
+          {snap.activeVision.length > 0 ? (
+            <ul className="list-none space-y-1 pl-0 m-0">
+              {snap.activeVision.map((t, i) => (
+                <li key={`${t.pageIndex}-${t.step}-${i}`}>
+                  Page {t.pageIndex + 1} · {visionStepLabel(t.step)} ·{" "}
+                  {t.inference === "generating"
+                    ? "Generating response…"
+                    : "Waiting for model…"}
+                </li>
+              ))}
+            </ul>
+          ) : snap.raster &&
+            snap.raster.total > 0 &&
+            snap.raster.completed >= snap.raster.total &&
+            !snap.serverPhase ? (
+            <p className="text-gray-500">No in-flight Ollama calls (between steps or merging).</p>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
 
 async function pagePngToFile(page: ExtractionPage): Promise<File> {
   const raw = page.image_base64.trim();
@@ -60,6 +121,10 @@ export default function AiExtractionWizard() {
     completed: number;
     total: number;
   } | null>(null);
+  /** Per-session toggle; env `NEXT_PUBLIC_EXTRACTION_DEBUG_UI` also enables debug. */
+  const [extractionDebugUserToggle, setExtractionDebugUserToggle] = useState(false);
+  const [extractionDebugSnapshot, setExtractionDebugSnapshot] =
+    useState<ExtractionDebugSnapshot | null>(null);
   const [highAccuracy, setHighAccuracy] = useState(false);
   const [twoStage, setTwoStage] = useState(false);
   const [noBrowserTimeLimit, setNoBrowserTimeLimit] = useState(false);
@@ -92,6 +157,13 @@ export default function AiExtractionWizard() {
     if (!localOllamaInfo) return false;
     return localOllamaBlockedFromHttpsPage(localOllamaInfo.baseUrl);
   }, [localOllamaInfo]);
+
+  const extractionDebugEnabled = useMemo(
+    () =>
+      isExtractionDebugUiEnabled() ||
+      (isClientOllamaExtractionEnabled() && extractionDebugUserToggle),
+    [extractionDebugUserToggle]
+  );
 
   const handleSlotAssign = useCallback(
     (slotId: string, regionId: string) => {
@@ -131,6 +203,7 @@ export default function AiExtractionWizard() {
     setErr(null);
     setBusy(true);
     setAnalyzeProgress(null);
+    setExtractionDebugSnapshot(null);
     setStep("analyze");
     try {
       const res = await api.extraction.analyze(files, {
@@ -145,6 +218,13 @@ export default function AiExtractionWizard() {
         onProgress: (completed, total) => {
           setAnalyzeProgress({ completed, total });
         },
+        ...(extractionDebugEnabled
+          ? {
+              onExtractionDebug: (snap: ExtractionDebugSnapshot) => {
+                setExtractionDebugSnapshot(snap);
+              },
+            }
+          : {}),
       });
       setData(res);
       setEditableSets(structuredClone(res.sets));
@@ -163,6 +243,7 @@ export default function AiExtractionWizard() {
     } finally {
       setBusy(false);
       setAnalyzeProgress(null);
+      setExtractionDebugSnapshot(null);
     }
   };
 
@@ -184,6 +265,7 @@ export default function AiExtractionWizard() {
     setErr(null);
     setPageRegenHint(null);
     setRegenBusy(true);
+    setExtractionDebugSnapshot(null);
     try {
       const f = await pagePngToFile(currentPage);
       const res = await api.extraction.reanalyzePage(f, {
@@ -193,6 +275,16 @@ export default function AiExtractionWizard() {
         high_accuracy: highAccuracy,
         two_stage: extractionMode === "layout" ? false : twoStage,
         layout_only: extractionMode === "layout",
+        ...(extractionDebugEnabled
+          ? {
+              onProgress: (completed, total) => {
+                setAnalyzeProgress({ completed, total });
+              },
+              onExtractionDebug: (snap: ExtractionDebugSnapshot) => {
+                setExtractionDebugSnapshot(snap);
+              },
+            }
+          : {}),
       });
       const newP = res.pages[0];
       if (!newP) {
@@ -229,6 +321,8 @@ export default function AiExtractionWizard() {
       setErr(e instanceof Error ? e.message : "Re-analyze failed.");
     } finally {
       setRegenBusy(false);
+      setExtractionDebugSnapshot(null);
+      setAnalyzeProgress(null);
     }
   }, [
     currentPage,
@@ -240,6 +334,7 @@ export default function AiExtractionWizard() {
     extractionMode,
     localOllamaDpi,
     localOllamaConcurrency,
+    extractionDebugEnabled,
   ]);
 
   const updateSetContext = useCallback((setIndex: number, context_text: string) => {
@@ -541,6 +636,22 @@ export default function AiExtractionWizard() {
                     />
                   </label>
                 </div>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-1 rounded border-gray-300"
+                    checked={extractionDebugUserToggle}
+                    onChange={(e) => setExtractionDebugUserToggle(e.target.checked)}
+                  />
+                  <span>
+                    <span className="font-medium text-gray-900">Show model debug</span>
+                    <span className="block text-gray-600 text-xs mt-0.5">
+                      Page, pipeline step, and waiting vs generating (with debug streaming). You can also set{" "}
+                      <code className="text-xs bg-white/80 px-1 rounded">NEXT_PUBLIC_EXTRACTION_DEBUG_UI=true</code>{" "}
+                      to enable without this checkbox.
+                    </span>
+                  </span>
+                </label>
               </div>
             ) : null}
             <label className="flex items-start gap-2 cursor-pointer">
@@ -644,6 +755,9 @@ export default function AiExtractionWizard() {
           ) : (
             <p className="text-sm text-gray-500">Preparing pages…</p>
           )}
+          {extractionDebugEnabled && busy ? (
+            <ExtractionDebugPanel snap={extractionDebugSnapshot} />
+          ) : null}
         </div>
       )}
 
@@ -689,6 +803,9 @@ export default function AiExtractionWizard() {
                   {pageRegenHint}
                 </p>
               )}
+              {extractionDebugEnabled && regenBusy ? (
+                <ExtractionDebugPanel snap={extractionDebugSnapshot} />
+              ) : null}
               {currentPage ? (
                 <>
                   <ExtractionReviewOverlay

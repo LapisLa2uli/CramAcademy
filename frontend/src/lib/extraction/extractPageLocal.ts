@@ -6,7 +6,20 @@ import {
   layoutOnlyUser,
   pageExtractionUser,
 } from "@/lib/extraction/extractionPrompts";
+import type { ExtractionVisionStep } from "@/lib/extraction/extractionDebug";
 import { ollamaChatCompletion, type ChatMessage } from "@/lib/extraction/ollamaOpenAI";
+
+export type VisionActivityEvent = {
+  pageIndex: number;
+  step: ExtractionVisionStep;
+  phase: "start" | "end";
+};
+
+export type VisionInferenceEvent = {
+  pageIndex: number;
+  step: ExtractionVisionStep;
+  inference: "waiting" | "generating";
+};
 
 function pngToDataUrl(pngBytes: Uint8Array): string {
   const chunk = 8192;
@@ -121,7 +134,14 @@ async function chat(
   system: string,
   userText: string,
   dataUrl: string,
-  responseFormat: { type: string; json_schema?: unknown }
+  responseFormat: { type: string; json_schema?: unknown },
+  visionMeta: {
+    pageIndex: number;
+    step: ExtractionVisionStep;
+    onVisionActivity?: (ev: VisionActivityEvent) => void;
+    onInferencePhase?: (ev: VisionInferenceEvent) => void;
+    useInferenceStream: boolean;
+  }
 ): Promise<Record<string, unknown> | null> {
   const messages: ChatMessage[] = [
     { role: "system", content: system },
@@ -133,29 +153,41 @@ async function chat(
       ],
     },
   ];
-  try {
-    const { content } = await ollamaChatCompletion({
+  const { pageIndex, step, onVisionActivity, onInferencePhase, useInferenceStream } = visionMeta;
+
+  const runOnce = async (rf: { type: string; json_schema?: unknown }) => {
+    onInferencePhase?.({ pageIndex, step, inference: "waiting" });
+    return ollamaChatCompletion({
       baseUrl: ctx.baseUrl,
       model: ctx.model,
       messages,
       temperature: 0.1,
-      responseFormat: ctx.useJsonSchema ? responseFormat : { type: "json_object" },
+      responseFormat: rf,
       signal: ctx.signal,
+      stream: useInferenceStream,
+      onFirstToken: useInferenceStream
+        ? () => onInferencePhase?.({ pageIndex, step, inference: "generating" })
+        : undefined,
     });
-    return parseJsonContent(content);
-  } catch (e) {
-    if (ctx.useJsonSchema && responseFormat.type === "json_schema") {
-      const { content } = await ollamaChatCompletion({
-        baseUrl: ctx.baseUrl,
-        model: ctx.model,
-        messages,
-        temperature: 0.1,
-        responseFormat: { type: "json_object" },
-        signal: ctx.signal,
-      });
+  };
+
+  onVisionActivity?.({ pageIndex, step, phase: "start" });
+  try {
+    try {
+      const { content } = await runOnce(
+        ctx.useJsonSchema ? responseFormat : { type: "json_object" }
+      );
       return parseJsonContent(content);
+    } catch (e) {
+      if (ctx.useJsonSchema && responseFormat.type === "json_schema") {
+        onInferencePhase?.({ pageIndex, step, inference: "waiting" });
+        const { content } = await runOnce({ type: "json_object" });
+        return parseJsonContent(content);
+      }
+      throw e;
     }
-    throw e;
+  } finally {
+    onVisionActivity?.({ pageIndex, step, phase: "end" });
   }
 }
 
@@ -169,7 +201,14 @@ async function chatFix(
   pageIndex: number,
   issues: string[],
   previous: Record<string, unknown>,
-  dataUrl: string
+  dataUrl: string,
+  visionMeta: {
+    pageIndex: number;
+    step: ExtractionVisionStep;
+    onVisionActivity?: (ev: VisionActivityEvent) => void;
+    onInferencePhase?: (ev: VisionInferenceEvent) => void;
+    useInferenceStream: boolean;
+  }
 ): Promise<Record<string, unknown> | null> {
   const user = fixOutputUser(
     pageIndex,
@@ -186,6 +225,9 @@ async function chatFix(
       ],
     },
   ];
+  const { onVisionActivity, onInferencePhase, useInferenceStream, step } = visionMeta;
+  onVisionActivity?.({ pageIndex: visionMeta.pageIndex, step, phase: "start" });
+  onInferencePhase?.({ pageIndex: visionMeta.pageIndex, step, inference: "waiting" });
   try {
     const { content } = await ollamaChatCompletion({
       baseUrl: ctx.baseUrl,
@@ -194,10 +236,21 @@ async function chatFix(
       temperature: 0.1,
       responseFormat: { type: "json_object" },
       signal: ctx.signal,
+      stream: useInferenceStream,
+      onFirstToken: useInferenceStream
+        ? () =>
+            onInferencePhase?.({
+              pageIndex: visionMeta.pageIndex,
+              step,
+              inference: "generating",
+            })
+        : undefined,
     });
     return parseJsonContent(content);
   } catch {
     return null;
+  } finally {
+    onVisionActivity?.({ pageIndex: visionMeta.pageIndex, step, phase: "end" });
   }
 }
 
@@ -215,10 +268,15 @@ export async function extractPageLocal(params: {
   signal?: AbortSignal;
   /** Fires after each finished Ollama call (layout / main / fix) so the UI can advance during long inference. */
   onVisionSubstep?: () => void;
+  onVisionActivity?: (ev: VisionActivityEvent) => void;
+  onInferencePhase?: (ev: VisionInferenceEvent) => void;
+  /** When true (e.g. debug UI), use streaming to detect first token vs waiting. */
+  useInferenceStream?: boolean;
 }): Promise<{ data: Record<string, unknown>; warnings: string[] }> {
   const warnings: string[] = [];
   const dataUrl = pngToDataUrl(params.pngBytes);
   const imageDetail = params.imageDetail ?? "low";
+  const useInferenceStream = params.useInferenceStream === true;
   const ctx = {
     baseUrl: params.baseUrl,
     model: params.model,
@@ -227,6 +285,14 @@ export async function extractPageLocal(params: {
     signal: params.signal,
   };
 
+  const vm = (step: ExtractionVisionStep) => ({
+    pageIndex: params.pageIndex,
+    step,
+    onVisionActivity: params.onVisionActivity,
+    onInferencePhase: params.onInferencePhase,
+    useInferenceStream,
+  });
+
   if (params.layoutOnly) {
     try {
       const layoutJson = await chat(
@@ -234,7 +300,8 @@ export async function extractPageLocal(params: {
         LAYOUT_ONLY_SYSTEM,
         layoutOnlyUser(params.pageIndex),
         dataUrl,
-        LAYOUT_SCHEMA_FORMAT
+        LAYOUT_SCHEMA_FORMAT,
+        vm("layout_only")
       );
       params.onVisionSubstep?.();
       let regions: unknown[] = [];
@@ -258,7 +325,8 @@ export async function extractPageLocal(params: {
         LAYOUT_ONLY_SYSTEM,
         layoutOnlyUser(params.pageIndex),
         dataUrl,
-        LAYOUT_SCHEMA_FORMAT
+        LAYOUT_SCHEMA_FORMAT,
+        vm("layout")
       );
       if (layoutJson && !Array.isArray(layoutJson.regions)) layoutJson = null;
     } catch (e) {
@@ -295,7 +363,8 @@ export async function extractPageLocal(params: {
       PAGE_EXTRACTION_SYSTEM,
       userFull,
       dataUrl,
-      FULL_SCHEMA_FORMAT
+      FULL_SCHEMA_FORMAT,
+      vm("extract")
     );
     params.onVisionSubstep?.();
   } catch (e) {
@@ -336,7 +405,8 @@ export async function extractPageLocal(params: {
         params.pageIndex,
         issues,
         data,
-        dataUrl
+        dataUrl,
+        vm("fix")
       );
       params.onVisionSubstep?.();
       if (fixed && Array.isArray(fixed.sets)) {

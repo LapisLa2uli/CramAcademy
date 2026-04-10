@@ -17,6 +17,7 @@ import {
   ExtractionCommitBody,
 } from "@/types";
 import { supabase } from "./supabase";
+import type { ExtractionDebugSnapshot } from "@/lib/extraction/extractionDebug";
 import {
   isClientOllamaExtractionEnabled,
   runLocalOllamaAnalyze,
@@ -438,6 +439,8 @@ export const api = {
         /** If true, do not cap upload + stream read by the usual client wall clock (host/network may still limit). */
         disableClientTimeout?: boolean;
         onProgress?: (completed: number, total: number) => void;
+        /** Raster + in-flight vision (local) or server stream `status.phase` when using analyze-stream. */
+        onExtractionDebug?: (snapshot: ExtractionDebugSnapshot) => void;
       }
     ): Promise<ExtractionAnalyzeResponse> {
       const maxPages = opts?.max_pages ?? 24;
@@ -454,6 +457,7 @@ export const api = {
           two_stage: opts?.two_stage,
           layout_only: opts?.layout_only,
           onProgress: opts?.onProgress,
+          onExtractionDebug: opts?.onExtractionDebug,
           signal,
         });
       }
@@ -589,6 +593,15 @@ export const api = {
           throw new Error(ev.detail || "Extraction failed.");
         }
         if (ev.type === "status") {
+          const raw = ev as unknown as { phase?: unknown };
+          const phase = typeof raw.phase === "string" ? raw.phase : null;
+          if (phase && opts?.onExtractionDebug) {
+            opts.onExtractionDebug({
+              raster: null,
+              activeVision: [],
+              serverPhase: phase,
+            });
+          }
           return;
         }
         if (ev.type === "page_image_begin" && ev.data && typeof ev.data === "object") {
@@ -807,6 +820,8 @@ export const api = {
         high_accuracy?: boolean;
         two_stage?: boolean;
         layout_only?: boolean;
+        onProgress?: (completed: number, total: number) => void;
+        onExtractionDebug?: (snapshot: ExtractionDebugSnapshot) => void;
       }
     ): Promise<ExtractionAnalyzeResponse> {
       if (isClientOllamaExtractionEnabled()) {
@@ -819,6 +834,8 @@ export const api = {
           high_accuracy: opts?.high_accuracy,
           two_stage: opts?.two_stage,
           layout_only: opts?.layout_only,
+          onProgress: opts?.onProgress,
+          onExtractionDebug: opts?.onExtractionDebug,
           signal,
         });
       }
