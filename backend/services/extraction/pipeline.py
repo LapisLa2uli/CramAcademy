@@ -5,15 +5,19 @@ import logging
 from typing import Any, AsyncIterator
 
 from config import get_settings
-from schemas.extraction import ExtractionAnalyzeResponse, ExtractionPage
+from schemas.extraction import ExtractionAnalyzeResponse, ExtractionPage, PdfDocumentProfile
+from services.extraction.ap_extraction_postprocess import apply_canonical_postprocess
+from services.extraction.ap_extraction_validate import validate_extraction_structure
 from services.extraction.consistency import collect_warnings
 from services.extraction.cross_page import build_page_summaries, cross_page_warning_pass
 from services.extraction.normalize import merge_page_results
 from services.extraction.openai_extract import extract_page
+from services.extraction.pdf_document_profile import build_document_profile
 from services.extraction.pdf_text_hint import extract_pdf_page_texts
 from services.extraction.render_pdf import (
     image_file_to_png_bytes,
     pdf_bytes_to_png_pages,
+    pdf_bytes_to_single_png_page,
     prepare_extraction_stream_image,
     resize_png_max_edge,
 )
@@ -102,6 +106,18 @@ async def iter_analyze(
         yield {"type": "result", "data": r.model_dump(mode="json")}
         return
 
+    doc_profile: PdfDocumentProfile | None = None
+    if len(files) == 1 and _is_pdf(files[0][1]) and pdf_text_by_page:
+        doc_profile = build_document_profile(pdf_text_by_page, max_pages_index=len(pages))
+        if not settings.extraction_skip_noncontent_pages:
+            doc_profile = doc_profile.model_copy(
+                update={
+                    "pages": [
+                        p.model_copy(update={"extract_vision": True}) for p in doc_profile.pages
+                    ]
+                }
+            )
+
     if settings.ai_provider == "ollama":
         logger.warning(
             "Server-side extraction uses Ollama — ensure EXTRACTION_MODEL / OLLAMA_MODEL is a "
@@ -113,18 +129,35 @@ async def iter_analyze(
 
     sem = asyncio.Semaphore(max(1, settings.extraction_page_concurrency))
 
+    prof_hint = doc_profile.hint_for_vision() if doc_profile else None
+
     async def one_page(
         idx: int, png: bytes, w: int, h: int
     ) -> tuple[int, dict[str, Any], bytes, int, int, list[str]]:
+        wlocal: list[str] = []
+        skip = (
+            doc_profile is not None
+            and idx < len(doc_profile.pages)
+            and not doc_profile.pages[idx].extract_vision
+        )
+        if skip and not layout_only:
+            assert doc_profile is not None
+            role = doc_profile.pages[idx].role
+            wlocal.append(
+                f"Page {idx + 1}: skipped vision extraction ({role}) — non-questionnaire page."
+            )
+            return (idx, {"regions": [], "sets": []}, png, w, h, wlocal)
         async with sem:
             ptext = pdf_text_by_page.get(idx) if not layout_only else None
-            raw, wlocal = await extract_page(
+            raw, wlocal2 = await extract_page(
                 idx,
                 png,
                 pdf_page_text=ptext,
+                document_profile_hint=prof_hint,
                 two_stage=effective_two_stage,
                 layout_only=layout_only,
             )
+        wlocal.extend(wlocal2)
         return (idx, raw, png, w, h, wlocal)
 
     tasks = [
@@ -152,6 +185,90 @@ async def iter_analyze(
     yield {"type": "status", "phase": "merge"}
 
     pages_out, sets_out, stitch_events = merge_page_results(page_results)
+
+    if doc_profile is not None and pdf_text_by_page:
+        sets_out = apply_canonical_postprocess(
+            sets_out, doc_profile, pdf_text_by_page, max_page=len(pages)
+        )
+    struct_warnings: list[str] = []
+    retry_pages: list[int] = []
+    if doc_profile is not None:
+        struct_warnings, retry_pages = validate_extraction_structure(sets_out, doc_profile)
+
+    if (
+        settings.extraction_auto_retry_fail_pages
+        and retry_pages
+        and len(files) == 1
+        and _is_pdf(files[0][1])
+        and doc_profile is not None
+        and doc_profile.family == "college_board_calc"
+        and not layout_only
+    ):
+        dpi_retry = max(dpi_val + 40, settings.extraction_retry_dpi_min)
+        if dpi_retry > dpi_val:
+            warn.append(
+                f"Re-extracting {len(retry_pages)} page(s) at DPI {dpi_retry} after calculus integrity checks."
+            )
+            pdf_blob = files[0][1]
+            to_retry = [i for i in retry_pages[:16] if i >= 0]
+
+            def _tuple_for_page(pi: int):
+                for tup in page_results:
+                    if tup[0] == pi:
+                        return tup
+                return None
+
+            async def _redo_one(
+                i: int,
+            ) -> tuple[int, dict[str, Any], bytes, int, int, list[str]]:
+                prev = _tuple_for_page(i)
+                async with sem:
+                    try:
+                        png_hi = pdf_bytes_to_single_png_page(
+                            pdf_blob, page_index=i, dpi=dpi_retry
+                        )
+                        png_hi, rw, rh = resize_png_max_edge(png_hi, max_edge)
+                    except Exception as e:
+                        if prev:
+                            return (
+                                i,
+                                prev[1],
+                                prev[2],
+                                prev[3],
+                                prev[4],
+                                [f"Page {i + 1}: retry render failed ({e})."],
+                            )
+                        return (i, {"regions": [], "sets": []}, b"", 0, 0, [f"Page {i + 1}: retry failed ({e})."])
+                    ptext = pdf_text_by_page.get(i) if not layout_only else None
+                    raw_r, wl = await extract_page(
+                        i,
+                        png_hi,
+                        pdf_page_text=ptext,
+                        document_profile_hint=prof_hint,
+                        two_stage=effective_two_stage,
+                        layout_only=layout_only,
+                    )
+                return (i, raw_r, png_hi, rw, rh, wl)
+
+            retry_tasks = [asyncio.create_task(_redo_one(i)) for i in to_retry]
+            if retry_tasks:
+                for row in await asyncio.gather(*retry_tasks):
+                    i, raw_r, png_hi, rw, rh, wl = row
+                    for j, tup in enumerate(page_results):
+                        if tup[0] == i:
+                            page_results[j] = (i, raw_r, png_hi, rw, rh)
+                            break
+                    warn.extend(wl)
+                page_results.sort(key=lambda x: x[0])
+                pages_out, sets_out, stitch_events = merge_page_results(page_results)
+                if doc_profile is not None and pdf_text_by_page:
+                    sets_out = apply_canonical_postprocess(
+                        sets_out, doc_profile, pdf_text_by_page, max_page=len(pages)
+                    )
+                struct_warnings, retry_pages = validate_extraction_structure(sets_out, doc_profile)
+
+    warn.extend(struct_warnings)
+
     for ev in stitch_events:
         pages_1based = [p + 1 for p in ev["source_page_indices"]]
         logger.info(
@@ -243,7 +360,12 @@ async def iter_analyze(
             )
         )
 
-    r = ExtractionAnalyzeResponse(warnings=warn, pages=light_pages, sets=sets_out)
+    r = ExtractionAnalyzeResponse(
+        warnings=warn,
+        pages=light_pages,
+        sets=sets_out,
+        document_profile=doc_profile,
+    )
     payload = r.model_dump(mode="json")
     json_str = json.dumps(payload, ensure_ascii=False)
     th = settings.extraction_stream_result_json_char_threshold

@@ -231,10 +231,21 @@ export interface ExtractionSetDraft {
   source_page_indices?: number[];
 }
 
+/** Optional fingerprint from server-side PDF text (AP-style exams). */
+export interface PdfDocumentProfileWire {
+  family: string;
+  publisher?: string;
+  signals?: string[];
+  expected_mcq_choice_count?: number | null;
+  expected_mcq_question_count?: number | null;
+  pages?: { page_index: number; role: string; extract_vision: boolean }[];
+}
+
 export interface ExtractionAnalyzeResponse {
   warnings: string[];
   pages: ExtractionPage[];
   sets: ExtractionSetDraft[];
+  document_profile?: PdfDocumentProfileWire | null;
 }
 
 export interface ExtractionCommitBody {

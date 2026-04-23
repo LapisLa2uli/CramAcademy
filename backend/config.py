@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     extraction_two_stage_default: bool = False
     extraction_pdf_text_hint: bool = True
     extraction_cross_page_warnings: bool = True
+    # Skip vision on detected answer sheets, directions, keys, scoring (AP-style PDF text layer).
+    extraction_skip_noncontent_pages: bool = True
+    # Re-render selected pages at higher DPI when structural validation fails (Calculus MCQ).
+    extraction_auto_retry_fail_pages: bool = True
+    extraction_retry_dpi_min: int = 220
 
     class Config:
         env_file = ".env"

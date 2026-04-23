@@ -2,6 +2,70 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
+PdfExamFamily = Literal[
+    "marco_ap_lang",
+    "college_board_world",
+    "college_board_calc",
+    "college_board_generic",
+    "unknown",
+]
+
+PdfPageRole = Literal[
+    "exam_content",
+    "answer_sheet",
+    "directions",
+    "answer_key",
+    "scoring",
+    "toc",
+    "boilerplate",
+]
+
+
+class PdfPageSegment(BaseModel):
+    page_index: int = Field(ge=0)
+    role: PdfPageRole = "exam_content"
+    extract_vision: bool = True
+
+
+class PdfDocumentProfile(BaseModel):
+    """Lightweight document profile for extraction hints, skipping, and QA."""
+
+    family: PdfExamFamily = "unknown"
+    publisher: str = ""
+    signals: list[str] = Field(default_factory=list)
+    expected_mcq_choice_count: int | None = None
+    expected_mcq_question_count: int | None = None
+    pages: list[PdfPageSegment] = Field(default_factory=list)
+
+    def hint_for_vision(self) -> str:
+        parts: list[str] = []
+        parts.append(f"document_family={self.family}")
+        if self.publisher:
+            parts.append(f"publisher={self.publisher}")
+        if self.expected_mcq_choice_count is not None:
+            parts.append(f"expected_mcq_choices={self.expected_mcq_choice_count}")
+        if self.expected_mcq_question_count is not None:
+            parts.append(f"expected_mcq_questions={self.expected_mcq_question_count}")
+        if self.family == "marco_ap_lang":
+            parts.append(
+                "Expect long reading passages with line numbers; MCQ usually has five choices (A–E). "
+                "Section II may bundle many sources before the final essay prompt."
+            )
+        elif self.family == "college_board_world":
+            parts.append(
+                "MCQ often begins with 'Questions X–Y refer to…' blocks; four choices (A–D). "
+                "Later sections may include SAQ/DBQ/LEQ prompts with documents."
+            )
+        elif self.family == "college_board_calc":
+            parts.append(
+                "Typical layout: two-column multiple choice; heavy mathematical notation. "
+                "Trust the page image over embedded PDF text for all equations."
+            )
+        elif self.family == "college_board_generic":
+            parts.append("College Board-style layout; watch for two-column MCQ pages.")
+        return "[DOCUMENT_PROFILE] " + " ".join(parts)
+
+
 ExtractionRegionRole = Literal[
     "context",
     "shared_stem",
@@ -74,6 +138,7 @@ class ExtractionAnalyzeResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     pages: list[ExtractionPage] = Field(default_factory=list)
     sets: list[ExtractionSetDraft] = Field(default_factory=list)
+    document_profile: Optional[PdfDocumentProfile] = None
 
 
 class CommitQuestionItem(BaseModel):

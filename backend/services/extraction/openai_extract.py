@@ -240,6 +240,7 @@ async def extract_page(
     png_bytes: bytes,
     *,
     pdf_page_text: str | None = None,
+    document_profile_hint: str | None = None,
     two_stage: bool = False,
     layout_only: bool = False,
 ) -> tuple[dict[str, Any], list[str]]:
@@ -306,6 +307,8 @@ async def extract_page(
             layout_json = None
 
     hint_parts: list[str] = []
+    if document_profile_hint and document_profile_hint.strip():
+        hint_parts.append(document_profile_hint.strip()[:2000])
     if pdf_page_text and pdf_page_text.strip():
         hint_parts.append(
             "Embedded PDF text for this page (may have ordering gaps; trust the image if they disagree):\n"

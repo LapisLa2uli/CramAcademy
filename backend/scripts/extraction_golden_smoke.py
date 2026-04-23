@@ -32,6 +32,18 @@ def _imports_only() -> int:
     return 0
 
 
+def _unit_tests() -> int:
+    import unittest
+
+    suite = unittest.defaultTestLoader.discover(
+        str(BACKEND_ROOT / "tests"),
+        pattern="test_*.py",
+    )
+    runner = unittest.TextTestRunner(verbosity=1)
+    res = runner.run(suite)
+    return 0 if res.wasSuccessful() else 1
+
+
 async def _run_pdf(path: Path) -> int:
     from config import get_settings
     from services.extraction.pipeline import run_analyze
@@ -68,7 +80,14 @@ def main() -> int:
         type=Path,
         help="Optional PDF to analyze (calls the vision API).",
     )
+    p.add_argument(
+        "--unit",
+        action="store_true",
+        help="Run AP extraction unit tests (no API; no imports-only shortcut).",
+    )
     args = p.parse_args()
+    if args.unit:
+        return _unit_tests()
     if args.pdf is None:
         return _imports_only()
     if not args.pdf.is_file():

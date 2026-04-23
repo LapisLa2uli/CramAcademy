@@ -23,6 +23,27 @@ def pdf_bytes_to_png_pages(data: bytes, *, max_pages: int, dpi: int) -> list[byt
     return out
 
 
+def pdf_bytes_to_single_png_page(data: bytes, *, page_index: int, dpi: int) -> bytes:
+    """Render a single PDF page (0-based index) to PNG bytes."""
+    doc = pdfium.PdfDocument(data)
+    try:
+        if page_index < 0 or page_index >= len(doc):
+            raise ValueError(f"page_index {page_index} out of range (doc has {len(doc)} pages)")
+        scale = dpi / 72.0
+        page = doc[page_index]
+        try:
+            pil_image = page.render(scale=scale).to_pil()
+            if pil_image.mode not in ("RGB", "L"):
+                pil_image = pil_image.convert("RGB")
+            buf = io.BytesIO()
+            pil_image.save(buf, format="PNG", optimize=True)
+            return buf.getvalue()
+        finally:
+            page.close()
+    finally:
+        doc.close()
+
+
 def image_file_to_png_bytes(raw: bytes) -> bytes:
     """Normalize an uploaded image to PNG bytes."""
     im = Image.open(io.BytesIO(raw))
