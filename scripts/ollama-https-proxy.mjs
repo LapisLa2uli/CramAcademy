@@ -10,6 +10,7 @@
  * Env (optional):
  *   OLLAMA_PROXY_TARGET, OLLAMA_PROXY_PORT — upstream Ollama (default 127.0.0.1:11434)
  *   OLLAMA_HTTPS_HOST, OLLAMA_HTTPS_PORT — listen address (default 127.0.0.1:8443)
+ *   OLLAMA_PROXY_ALLOWED_ORIGINS — comma-separated extra allowed browser Origins (exact match)
  */
 
 import https from "node:https";
@@ -29,19 +30,31 @@ const OLLAMA_PORT = Number(process.env.OLLAMA_PROXY_PORT ?? 11434);
 const LISTEN_HOST = process.env.OLLAMA_HTTPS_HOST ?? "127.0.0.1";
 const LISTEN_PORT = Number(process.env.OLLAMA_HTTPS_PORT ?? 8443);
 
-const ALLOWED = new Set([
+const DEFAULT_ORIGINS = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
+  "https://localhost:3000",
+  "https://127.0.0.1:3000",
   "https://cram-academy.vercel.app",
-]);
+];
+
+const EXTRA = (process.env.OLLAMA_PROXY_ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const ALLOWED = new Set([...DEFAULT_ORIGINS, ...EXTRA]);
 
 function corsHeaders(origin) {
   if (!origin || !ALLOWED.has(origin)) return null;
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Requested-With",
+    "Access-Control-Allow-Headers":
+      "Authorization, Content-Type, X-Requested-With, Access-Control-Request-Private-Network",
     "Access-Control-Max-Age": "86400",
+    // Chrome: public HTTPS page → 127.0.0.1 requires this on preflight or fetch fails with "Failed to fetch".
+    "Access-Control-Allow-Private-Network": "true",
   };
 }
 

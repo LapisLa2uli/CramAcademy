@@ -30,6 +30,7 @@ function formatOllamaFetchError(e: unknown, baseUrl: string): string {
       `Failed to reach Ollama at ${baseUrl}. ` +
       "Start the HTTPS proxy (`cd frontend && npm run ollama-https-proxy`), ensure `ollama serve` is running, " +
       "and if the browser blocked the connection due to a self-signed certificate, open that URL in a new tab once and proceed (or use mkcert). " +
+      "If the app is on a different origin (e.g. another Vercel URL or port), set `OLLAMA_PROXY_ALLOWED_ORIGINS` when starting the proxy (comma-separated, exact `Origin` values). " +
       "Direct HTTP Ollama without the proxy: set NEXT_PUBLIC_OLLAMA_BASE_URL=http://127.0.0.1:11434 and use http://localhost:3000."
     );
   }
@@ -66,6 +67,14 @@ function envChatTimeoutMs(): number {
  */
 function formatOllamaHttpError(status: number, bodyText: string): string {
   const snippet = bodyText.slice(0, 400);
+  if (status === 403) {
+    return (
+      `Ollama HTTPS proxy returned 403: ${snippet.trim() || "Forbidden"}. ` +
+      "The proxy only allows requests from known page origins. Add yours: stop the proxy, then restart with " +
+      "`OLLAMA_PROXY_ALLOWED_ORIGINS=https://your-exact-origin` (comma-separated for multiple). " +
+      "Example: `OLLAMA_PROXY_ALLOWED_ORIGINS=https://my-app.vercel.app npm run ollama-https-proxy` from `frontend/`."
+    );
+  }
   if (status !== 500) {
     return `Ollama chat failed (${status}): ${snippet}`;
   }
