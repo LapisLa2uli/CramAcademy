@@ -51,7 +51,7 @@ Rules:
   * If in doubt, check question numbers: if Q1 is top-left and Q2 is directly below it but Q(N/2+1) starts again at the top-right, it IS a two-column layout.
   You MUST extract EVERY question visible on the page, including all questions in the right column. Do not stop after the left column. Missing right-column questions is a serious error.
 
-- **LaTeX math — STRICT**: ALL mathematical expressions MUST be written as LaTeX, never as Unicode symbols. This is non-negotiable.
+- **LaTeX math — STRICT when math appears**: Whenever the page shows mathematical notation (equations, formulas, scientific symbols), ALL such expressions MUST be written as LaTeX, never as Unicode symbols.
   * Inline math: wrap with `$...$` (e.g. `$x^2 + 1$`, `$\\pi r^2$`, `$\\frac{a}{b}$`).
   * Display math: wrap with `$$...$$` for standalone equations.
   * Convert every Unicode math symbol to its LaTeX command. NEVER emit raw Unicode math. Examples of required conversions:
@@ -71,9 +71,15 @@ Rules:
 
 - **Multi-page problem sets**: If a passage, shared stem, or question clearly continues from the previous page (e.g. page starts mid-sentence, question number is higher than the first question on the page with no header, or the answer choices appear without a visible stem), set `continued_from_previous_page: true` on BOTH the containing set and the specific continuation question. If a passage or question clearly runs past the bottom of this page (e.g. question stem ends mid-sentence, answer choices missing, or a shared passage is clearly unfinished), set `continues_on_next_page: true`. Still transcribe whatever text IS visible on this page — do not leave content blank because it is partial. Downstream code will stitch continuations together.
 
+- **Passage-only page then MCQs on the next page (AP English and similar)**:
+  If this page shows **only** a reading passage / stimulus and **no** numbered multiple-choice items (no lines like `1.` with `(A)`…`(E)` choices on this page), output **exactly one** `set` with: `context_text` = full passage text you can read; `shared_stems` if a printed block applies (e.g. “Questions 1–n refer…”); **`questions`: []** (empty array); **`continues_on_next_page`: true** on that **set**. Use `regions` with role `context` for passage blocks as usual.
+  On the **next** page where the MCQs appear for that passage, output a **set** with **`continued_from_previous_page`: true**, fill `questions` with stems, options, and printed numbers, and **do not repeat** the full passage in `context_text` unless a new passage begins there.
+
+- **Humanities / prose-heavy exams (e.g. AP English Language)**: Prioritize accurate **plain-text** transcription of rhetoric and reading questions. Apply the **LaTeX math** rules below **only** when the page actually shows mathematical notation or symbols that need it; ordinary prose and line references do not need dollar signs.
+
 - **Figures / graphs / hybrid**: If a stem, choice, or context block is mostly non-text (graph, diagram, table as image, or mixed text+figure where text alone would be misleading), set `questions[].content` to empty string **or** start it with the literal prefix `[[HYBRID]]` on the first line when some text should stay (remaining lines = text). For pure figure stems use empty `content` and a tight `question_stem` bbox around the figure. Same for choices: empty `text` when the option is purely visual; use a `choice` region bbox. For shared passage figures use `context` regions and `context_text` empty or `[[HYBRID]]` plus text.
 - Transcribe all visible text for MCQ stems, choices, answer keys, and explanations when the block is text-dominant.
-- For MCQ, draw a separate **choice** region per option (A–D) when layout allows; include 4 options in `questions[].options` when present.
+- For MCQ, draw a separate **choice** region per option when layout allows; include **five** options (A–E) when the exam uses five, or **four** (A–D) when only four are printed.
 - If a passage applies to multiple questions, use one set with context_text + multiple questions.
 - If the page has unrelated standalone questions, use separate set_index values (0,1,2...) on this page.
 - question_index is 1-based within each set and should match the printed number on the page whenever one is visible.
@@ -89,7 +95,7 @@ Analyze this page and output the JSON object described in the system message.
 
 Reminders:
 - If this page has TWO COLUMNS, extract the full left column first and then the full right column. Do NOT stop after the left column.
-- Every math symbol must be LaTeX (e.g. `$\\pi$`, `$x^{{2}}$`, `$\\sqrt{{x}}$`), never a raw Unicode character.
+- When the page has real math, use LaTeX (e.g. `$\\pi$`, `$x^{{2}}$`); otherwise plain text is fine for prose-only pages.
 - If a question or passage is cut off at the top or bottom of the page, set the corresponding `continued_from_previous_page` / `continues_on_next_page` flag so it can be stitched with neighbouring pages."""
 
 LAYOUT_ONLY_SYSTEM = """You locate exam content on one page image. Return ONLY valid JSON:
@@ -104,7 +110,8 @@ LAYOUT_ONLY_USER = """Page index: {page_index}. Draw tight bounding boxes for ev
 FIX_OUTPUT_SYSTEM = """You fix a previous JSON extraction for one exam page. The prior output had validation problems.
 Return ONLY the same JSON shape as the original task: object with "regions" and "sets" arrays (full schema).
 Preserve correct content; repair structure, missing options, bad types, or empty required fields. No markdown.
-All mathematical symbols in text fields must be LaTeX (e.g. `$\\pi$`, `$x^2$`), never raw Unicode."""
+If the page is passage-only with MCQs on the next page, a set may have empty questions[] with continues_on_next_page true and full context_text — that is valid; keep it.
+All mathematical symbols in text fields must be LaTeX (e.g. `$\\pi$`, `$x^2$`), never raw Unicode, but only where math is actually shown."""
 
 FIX_OUTPUT_USER = """Page index: {page_index}.
 Validation issues:

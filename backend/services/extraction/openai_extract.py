@@ -8,6 +8,7 @@ import httpx
 from openai import AsyncOpenAI
 
 from config import get_settings
+from services.extraction.json_extract import parse_json_from_model_output
 from prompts.extraction import (
     FIX_OUTPUT_SYSTEM,
     FIX_OUTPUT_USER,
@@ -79,6 +80,8 @@ def _image_part(data_url: str) -> dict[str, Any]:
 
 def _response_format_full() -> dict[str, Any]:
     s = get_settings()
+    if s.ai_provider == "ollama" and s.extraction_ollama_prefer_json_object:
+        return {"type": "json_object"}
     if not s.extraction_use_json_schema:
         return {"type": "json_object"}
     return {
@@ -93,6 +96,8 @@ def _response_format_full() -> dict[str, Any]:
 
 def _response_format_layout() -> dict[str, Any]:
     s = get_settings()
+    if s.ai_provider == "ollama" and s.extraction_ollama_prefer_json_object:
+        return {"type": "json_object"}
     if not s.extraction_use_json_schema:
         return {"type": "json_object"}
     return {
@@ -106,12 +111,19 @@ def _response_format_layout() -> dict[str, Any]:
 
 
 def _parse_json_content(content: str | None) -> dict[str, Any] | None:
-    if not content:
-        return None
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        return None
+    return parse_json_from_model_output(content)
+
+
+def _stem_only_continuation_set(s: dict[str, Any]) -> bool:
+    """Passage on this page; MCQs expected on the following page."""
+    if not isinstance(s, dict) or not s.get("continues_on_next_page"):
+        return False
+    ct = str(s.get("context_text") or "").strip()
+    stems = s.get("shared_stems")
+    has_stems = isinstance(stems, list) and any(
+        isinstance(x, dict) and str(x.get("text") or "").strip() for x in stems
+    )
+    return bool(ct) or has_stems
 
 
 def _validate_page_payload(data: dict[str, Any]) -> list[str]:
@@ -129,6 +141,8 @@ def _validate_page_payload(data: dict[str, Any]) -> list[str]:
                 continue
             qs = s.get("questions")
             if not isinstance(qs, list) or len(qs) == 0:
+                if _stem_only_continuation_set(s):
+                    continue
                 issues.append(f"sets[{si}] has no questions array or it is empty.")
                 continue
             for qi, q in enumerate(qs):
@@ -186,7 +200,11 @@ async def _chat(
         raise
 
     content = response.choices[0].message.content
-    return _parse_json_content(content)
+    parsed = _parse_json_content(content)
+    if parsed is None and content and str(content).strip():
+        snippet = str(content).strip()[:400].replace("\n", " ")
+        logger.warning("Vision response was not valid JSON after repair (snippet): %s", snippet)
+    return parsed
 
 
 async def _chat_fix(
@@ -241,6 +259,8 @@ async def extract_page(
     *,
     pdf_page_text: str | None = None,
     document_profile_hint: str | None = None,
+    document_family: str | None = None,
+    page_pdf_role: str | None = None,
     two_stage: bool = False,
     layout_only: bool = False,
 ) -> tuple[dict[str, Any], list[str]]:
@@ -354,9 +374,25 @@ async def extract_page(
 
         trivial_png = len(png_bytes) < 8000
         if not data["sets"] and not trivial_png:
-            warnings.append(
-                f"Page {page_index}: no question sets extracted — check scan quality or enable two-stage / high accuracy."
+            skip_empty_set_warn = page_pdf_role in (
+                "answer_sheet",
+                "directions",
+                "answer_key",
+                "scoring",
+                "toc",
+                "boilerplate",
             )
+            if not skip_empty_set_warn:
+                if document_family in ("college_board_ap_lang", "marco_ap_lang"):
+                    warnings.append(
+                        f"Page {page_index}: no sets extracted. For AP English, if this page is passage-only, "
+                        "the model should return one set with context_text, questions:[], and continues_on_next_page:true; "
+                        "try two-stage extraction or a stronger vision model (e.g. qwen2.5vl)."
+                    )
+                else:
+                    warnings.append(
+                        f"Page {page_index}: no question sets extracted — check scan quality or enable two-stage / high accuracy."
+                    )
 
         issues = _validate_page_payload(data)
         if issues:

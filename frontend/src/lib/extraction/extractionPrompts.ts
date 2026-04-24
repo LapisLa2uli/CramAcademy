@@ -45,10 +45,11 @@ Rules:
 - bbox uses normalized coordinates: origin top-left, x,y width height all 0-1 relative to this page image.
 - **Do not invent** questions, options, or answers. If text is unreadable, use empty string and confidence under 0.5.
 - **Reading order**: top-to-bottom; for two-column pages, finish the left column then the right column.
-- **LaTeX math**: Transcribe formulas with inline $...$ or \\(...\\) and display $$...$$ or \\[...\\] exactly as layout suggests (fractions, superscripts, Greek letters). Do not invent math not visible on the page.
+- **Multi-page**: If a passage continues from a prior page, set continued_from_previous_page on the set (and question if applicable). If this page is passage-only and MCQs continue on the next page, use one set with context_text, questions:[], continues_on_next_page:true on the set.
+- **LaTeX math**: Use LaTeX only when the page shows real math; otherwise plain text for prose-heavy exams (e.g. AP English).
 - **Figures / graphs / hybrid**: If a stem, choice, or context block is mostly non-text (graph, diagram, table as image, or mixed text+figure where text alone would be misleading), set questions[].content to empty string **or** start it with the literal prefix [[HYBRID]] on the first line when some text should stay (remaining lines = text). For pure figure stems use empty content and a tight question_stem bbox around the figure. Same for choices: empty text when the option is purely visual; use a choice region bbox. For shared passage figures use context regions and context_text empty or [[HYBRID]] plus text.
 - Transcribe all visible text for MCQ stems, choices, answer keys, and explanations when the block is text-dominant.
-- For MCQ, draw a separate **choice** region per option (A–D) when layout allows; include 4 options in questions[].options when present.
+- For MCQ, draw a separate **choice** region per option when layout allows; include five options (A–E) or four (A–D) to match what is printed.
 - If a passage applies to multiple questions, use one set with context_text + multiple questions.
 - If the page has unrelated standalone questions, use separate set_index values (0,1,2...) on this page.
 - question_index is 1-based within each set.
@@ -75,7 +76,8 @@ export function layoutOnlyUser(pageIndex: number): string {
 
 export const FIX_OUTPUT_SYSTEM = `You fix a previous JSON extraction for one exam page. The prior output had validation problems.
 Return ONLY the same JSON shape as the original task: object with "regions" and "sets" arrays (full schema).
-Preserve correct content; repair structure, missing options, bad types, or empty required fields. No markdown.`;
+Preserve correct content; repair structure, missing options, bad types, or empty required fields. No markdown.
+If the page is passage-only with MCQs on the next page, a set may have empty questions[] with continues_on_next_page true and full context_text — that is valid; keep it.`;
 
 export function fixOutputUser(pageIndex: number, issues: string[], previousJson: string): string {
   return `Page index: ${pageIndex}.

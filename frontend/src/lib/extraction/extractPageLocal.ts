@@ -33,13 +33,78 @@ function pngToDataUrl(pngBytes: Uint8Array): string {
   return `data:image/png;base64,${btoa(binary)}`;
 }
 
-function parseJsonContent(content: string | null): Record<string, unknown> | null {
-  if (!content) return null;
-  try {
-    return JSON.parse(content) as Record<string, unknown>;
-  } catch {
-    return null;
+function stripMarkdownJsonFence(text: string): string {
+  let s = text.trim();
+  const open = /^```(?:json)?\s*\r?\n?/i;
+  const m = s.match(open);
+  if (m && m.index === 0) s = s.slice(m[0].length);
+  if (s.trimEnd().endsWith("```")) s = s.trimEnd().slice(0, -3).trimEnd();
+  return s.trim();
+}
+
+function extractBalancedJsonObject(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  let quote = "";
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === quote) inStr = false;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inStr = true;
+      quote = ch;
+      continue;
+    }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
   }
+  return null;
+}
+
+function parseJsonFromModelOutput(content: string | null): Record<string, unknown> | null {
+  if (!content || !String(content).trim()) return null;
+  const raw = String(content).trim();
+  const candidates = [stripMarkdownJsonFence(raw), raw];
+  for (const cand of candidates) {
+    for (const chunk of [cand, extractBalancedJsonObject(cand) ?? ""]) {
+      if (!chunk) continue;
+      try {
+        const out = JSON.parse(chunk) as unknown;
+        if (out && typeof out === "object" && !Array.isArray(out)) {
+          return out as Record<string, unknown>;
+        }
+      } catch {
+        /* try next */
+      }
+    }
+  }
+  return null;
+}
+
+function parseJsonContent(content: string | null): Record<string, unknown> | null {
+  return parseJsonFromModelOutput(content);
+}
+
+function stemOnlyContinuationSet(s: Record<string, unknown>): boolean {
+  if (!s.continues_on_next_page) return false;
+  const ct = String(s.context_text ?? "").trim();
+  const stems = s.shared_stems;
+  const hasStems =
+    Array.isArray(stems) &&
+    stems.some(
+      (x) => x && typeof x === "object" && String((x as Record<string, unknown>).text ?? "").trim()
+    );
+  return Boolean(ct || hasStems);
 }
 
 const FULL_SCHEMA_FORMAT = {
@@ -86,6 +151,7 @@ function validatePagePayload(data: Record<string, unknown>): string[] {
       const sd = s as Record<string, unknown>;
       const qs = sd.questions;
       if (!Array.isArray(qs) || qs.length === 0) {
+        if (stemOnlyContinuationSet(sd)) return;
         issues.push(`sets[${si}] has no questions array or it is empty.`);
         return;
       }
@@ -388,9 +454,15 @@ export async function extractPageLocal(params: {
     const trivialPng = params.pngBytes.length < 8000;
     const sets = data.sets as unknown[];
     if (sets.length === 0 && !trivialPng) {
-      warnings.push(
-        `Page ${params.pageIndex}: no question sets extracted — check scan quality or enable two-stage / high accuracy.`
-      );
+      if (params.pageIndex === 0) {
+        warnings.push(
+          `Page ${params.pageIndex}: no sets extracted. If this page is passage-only (MCQs on the next page), enable two-stage extraction; the model should return one set with context_text, questions:[], and continues_on_next_page:true.`
+        );
+      } else {
+        warnings.push(
+          `Page ${params.pageIndex}: no question sets extracted — check scan quality or enable two-stage / high accuracy.`
+        );
+      }
     }
 
     const issues = validatePagePayload(data);

@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     extraction_openai_read_timeout_seconds: float = 180.0
     extraction_use_json_schema: bool = True
     extraction_two_stage_default: bool = False
+    # Local Ollama: json_schema is often flaky; prefer json_object for vision extraction.
+    extraction_ollama_prefer_json_object: bool = True
+    # Run layout-first pass by default when using Ollama (more reliable JSON on page 2).
+    extraction_ollama_two_stage_default: bool = True
     extraction_pdf_text_hint: bool = True
     extraction_cross_page_warnings: bool = True
     # Skip vision on detected answer sheets, directions, keys, scoring (AP-style PDF text layer).

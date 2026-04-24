@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 PdfExamFamily = Literal[
     "marco_ap_lang",
+    "college_board_ap_lang",
     "college_board_world",
     "college_board_calc",
     "college_board_generic",
@@ -50,6 +51,13 @@ class PdfDocumentProfile(BaseModel):
             parts.append(
                 "Expect long reading passages with line numbers; MCQ usually has five choices (A–E). "
                 "Section II may bundle many sources before the final essay prompt."
+            )
+        elif self.family == "college_board_ap_lang":
+            parts.append(
+                "Official AP English Language style: long reading passages (often line-referenced), "
+                "rhetoric MCQs with five choices (A–E). A page may be passage-only with questions on the next page — "
+                "then use context_text, empty questions[], set continues_on_next_page true. "
+                "Use plain quoted prose when there is no real math; apply LaTeX only for visible equations."
             )
         elif self.family == "college_board_world":
             parts.append(

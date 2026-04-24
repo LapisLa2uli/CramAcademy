@@ -17,6 +17,8 @@ from services.extraction.ap_extraction_postprocess import (
     join_soft_hyphen_linebreaks,
 )
 from services.extraction.ap_extraction_validate import validate_extraction_structure
+from services.extraction.json_extract import parse_json_from_model_output
+from services.extraction.openai_extract import _validate_page_payload
 from services.extraction.pdf_document_profile import build_document_profile, classify_page_text
 
 
@@ -42,6 +44,52 @@ class TestFingerprint(unittest.TestCase):
         pages = {0: blob}
         p = build_document_profile(pages, max_pages_index=1)
         self.assertEqual(p.family, "college_board_calc")
+
+    def test_college_board_ap_lang_no_marco(self) -> None:
+        pages = {
+            0: "AP® English Language and Composition\nFree-Response Questions\nCollege Board",
+        }
+        p = build_document_profile(pages, max_pages_index=1)
+        self.assertEqual(p.family, "college_board_ap_lang")
+        self.assertEqual(p.expected_mcq_choice_count, 5)
+
+
+class TestJsonExtract(unittest.TestCase):
+    def test_markdown_fence(self) -> None:
+        raw = '```json\n{"regions":[],"sets":[]}\n```'
+        out = parse_json_from_model_output(raw)
+        self.assertIsNotNone(out)
+        assert out is not None
+        self.assertEqual(out.get("sets"), [])
+
+    def test_preamble_and_brace_slice(self) -> None:
+        raw = 'Here you go: {"regions":[],"sets":[{"set_index":0}]} trailing'
+        out = parse_json_from_model_output(raw)
+        self.assertIsNotNone(out)
+        assert out is not None
+        self.assertTrue(isinstance(out.get("sets"), list))
+
+
+class TestStemOnlyValidation(unittest.TestCase):
+    def test_empty_questions_allowed_when_continuation(self) -> None:
+        data = {
+            "regions": [],
+            "sets": [
+                {
+                    "set_index": 0,
+                    "context_text": "Full passage text here.",
+                    "continued_from_previous_page": False,
+                    "continues_on_next_page": True,
+                    "shared_stems": [],
+                    "questions": [],
+                }
+            ],
+        }
+        issues = _validate_page_payload(data)
+        self.assertFalse(
+            any("no questions" in i.lower() or "empty" in i.lower() for i in issues),
+            issues,
+        )
 
 
 class TestPageRoles(unittest.TestCase):

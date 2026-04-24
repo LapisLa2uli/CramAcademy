@@ -96,7 +96,11 @@ async def iter_analyze(
     if settings.extraction_pdf_text_hint and len(files) == 1 and _is_pdf(files[0][1]):
         pdf_text_by_page = extract_pdf_page_texts(files[0][1], max_pages=limit)
 
-    effective_two_stage = (two_stage or settings.extraction_two_stage_default) and not layout_only
+    effective_two_stage = (
+        two_stage
+        or settings.extraction_two_stage_default
+        or (settings.ai_provider == "ollama" and settings.extraction_ollama_two_stage_default)
+    ) and not layout_only
 
     pages = _prepare_pages_from_uploads(
         files, max_pages=limit, max_edge=max_edge, dpi=dpi_val
@@ -120,8 +124,8 @@ async def iter_analyze(
 
     if settings.ai_provider == "ollama":
         logger.warning(
-            "Server-side extraction uses Ollama — ensure EXTRACTION_MODEL / OLLAMA_MODEL is a "
-            "vision-capable tag (e.g. llava:7b), not a text-only model like llama3."
+            "Server-side extraction uses Ollama — use a vision model tag on EXTRACTION_MODEL / "
+            "OLLAMA_MODEL (e.g. qwen2.5vl:7b, llama3.2-vision, llava:7b), not a text-only tag like llama3."
         )
 
     total = len(pages)
@@ -149,11 +153,19 @@ async def iter_analyze(
             return (idx, {"regions": [], "sets": []}, png, w, h, wlocal)
         async with sem:
             ptext = pdf_text_by_page.get(idx) if not layout_only else None
+            fam = doc_profile.family if doc_profile else None
+            role = (
+                doc_profile.pages[idx].role
+                if doc_profile is not None and idx < len(doc_profile.pages)
+                else None
+            )
             raw, wlocal2 = await extract_page(
                 idx,
                 png,
                 pdf_page_text=ptext,
                 document_profile_hint=prof_hint,
+                document_family=fam,
+                page_pdf_role=role,
                 two_stage=effective_two_stage,
                 layout_only=layout_only,
             )
@@ -240,11 +252,19 @@ async def iter_analyze(
                             )
                         return (i, {"regions": [], "sets": []}, b"", 0, 0, [f"Page {i + 1}: retry failed ({e})."])
                     ptext = pdf_text_by_page.get(i) if not layout_only else None
+                    rfam = doc_profile.family if doc_profile else None
+                    rrole = (
+                        doc_profile.pages[i].role
+                        if doc_profile is not None and i < len(doc_profile.pages)
+                        else None
+                    )
                     raw_r, wl = await extract_page(
                         i,
                         png_hi,
                         pdf_page_text=ptext,
                         document_profile_hint=prof_hint,
+                        document_family=rfam,
+                        page_pdf_role=rrole,
                         two_stage=effective_two_stage,
                         layout_only=layout_only,
                     )

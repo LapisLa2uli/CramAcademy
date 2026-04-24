@@ -101,6 +101,6 @@ def apply_canonical_postprocess(
     family = profile.family
     if family == "college_board_world":
         sets = apply_world_shared_stems_from_text(sets, pdf_text_by_page, max_page=max_page)
-    if family == "marco_ap_lang":
+    if family in ("marco_ap_lang", "college_board_ap_lang"):
         sets = apply_marco_hyphen_cleanup(sets)
     return sets

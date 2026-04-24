@@ -39,13 +39,14 @@ def _detect_family(blob: str) -> tuple[PdfExamFamily, str, list[str]]:
     low = blob.lower()
     signals: list[str] = []
 
-    if "marco learning" in low or "www.marcolearning.com" in low:
-        signals.append("marco_branding")
     if "english language" in low and "composition" in low:
         signals.append("ap_english_language")
-    if signals and ("ap_english_language" in signals or "marco_branding" in signals):
-        if "english language" in low:
+        is_marco = "marco learning" in low or "www.marcolearning.com" in low
+        if is_marco:
+            signals.append("marco_branding")
             return "marco_ap_lang", "Marco Learning", signals
+        pub = "College Board" if ("college board" in low or "advanced placement" in low or "©" in blob) else ""
+        return "college_board_ap_lang", pub, signals
 
     if "college board" in low or "ap central" in low:
         signals.append("college_board")
@@ -69,6 +70,8 @@ def _detect_family(blob: str) -> tuple[PdfExamFamily, str, list[str]]:
 
 def _defaults_for_family(family: PdfExamFamily) -> tuple[int | None, int | None]:
     if family == "marco_ap_lang":
+        return 5, 45
+    if family == "college_board_ap_lang":
         return 5, 45
     if family == "college_board_world":
         return 4, 55
