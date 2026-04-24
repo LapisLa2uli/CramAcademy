@@ -90,11 +90,14 @@ def assess_pdf_text_layer(
         warnings.append(
             "PDF appears figure-heavy; text-only mode may miss graph/image details."
         )
+        # Keep text-only enabled when text coverage is sufficient.
+        # Many born-digital PDFs contain embedded image objects (logos/backgrounds)
+        # despite having a healthy text layer.
         return TextOnlyAssessment(
-            use_text_only=False,
+            use_text_only=True,
             coverage_ratio=coverage_ratio,
             image_pages_ratio=image_ratio,
-            reason="too_many_image_pages",
+            reason="eligible_figure_heavy",
             warnings=warnings,
         )
     return TextOnlyAssessment(

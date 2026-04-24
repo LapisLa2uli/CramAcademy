@@ -117,6 +117,11 @@ async def iter_analyze(
         )
         use_text_only = assess.use_text_only
         text_only_warnings.extend(assess.warnings)
+        if not use_text_only:
+            text_only_warnings.append(
+                "Text-only eligibility not met; using vision "
+                f"(reason={assess.reason}, coverage={assess.coverage_ratio:.2f}, image_pages={assess.image_pages_ratio:.2f})."
+            )
         if use_text_only:
             text_only_warnings.append(
                 "Text-only extraction mode used (no vision model calls)."

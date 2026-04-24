@@ -227,3 +227,4 @@ class TestTextOnlyAssessment(unittest.TestCase):
         }
         result = assess_pdf_text_layer(pdf_stub, texts, max_pages=3)
         self.assertGreater(result.coverage_ratio, 0.6)
+        self.assertTrue(result.use_text_only)
