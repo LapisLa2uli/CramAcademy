@@ -121,6 +121,7 @@ async def iter_analyze(
             text_only_warnings.append(
                 "Text-only extraction mode used (no vision model calls)."
             )
+    yield {"type": "status", "phase": "mode", "mode": "text" if use_text_only else "vision"}
 
     pages = _prepare_pages_from_uploads(
         files, max_pages=limit, max_edge=max_edge, dpi=dpi_val

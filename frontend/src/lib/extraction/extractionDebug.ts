@@ -27,6 +27,8 @@ export type ExtractionStitchEvent = {
 };
 
 export type ExtractionDebugSnapshot = {
+  /** Current extraction mode selected by the pipeline. */
+  extractionMode: "text" | "vision" | null;
   /** PDF rasterization progress (1-based page indices implied by completed/total). */
   raster: { completed: number; total: number } | null;
   /** In-flight Ollama vision calls; multiple entries when page_concurrency > 1. */
@@ -39,6 +41,7 @@ export type ExtractionDebugSnapshot = {
 
 export function createEmptyExtractionDebugSnapshot(): ExtractionDebugSnapshot {
   return {
+    extractionMode: null,
     raster: null,
     activeVision: [],
     serverPhase: null,

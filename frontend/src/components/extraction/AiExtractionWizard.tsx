@@ -59,6 +59,14 @@ function ExtractionDebugPanel({ snap }: { snap: ExtractionDebugSnapshot | null }
         <p className="text-gray-600">Starting…</p>
       ) : (
         <>
+          {snap.extractionMode ? (
+            <p>
+              Extraction mode:{" "}
+              <span className="text-gray-900">
+                {snap.extractionMode === "text" ? "Text-only" : "Vision"}
+              </span>
+            </p>
+          ) : null}
           {snap.raster ? (
             <p>
               Raster: {snap.raster.completed} / {snap.raster.total} pages

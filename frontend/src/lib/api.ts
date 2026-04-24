@@ -575,9 +575,11 @@ export const api = {
       const stitches: import("@/lib/extraction/extractionDebug").ExtractionStitchEvent[] =
         [];
       let latestServerPhase: string | null = null;
+      let latestExtractionMode: "text" | "vision" | null = null;
       const emitDebug = () => {
         if (!opts?.onExtractionDebug) return;
         opts.onExtractionDebug({
+          extractionMode: latestExtractionMode,
           raster: null,
           activeVision: [],
           serverPhase: latestServerPhase,
@@ -607,12 +609,19 @@ export const api = {
           throw new Error(ev.detail || "Extraction failed.");
         }
         if (ev.type === "status") {
-          const raw = ev as unknown as { phase?: unknown };
+          const raw = ev as unknown as { phase?: unknown; mode?: unknown };
           const phase = typeof raw.phase === "string" ? raw.phase : null;
+          const mode =
+            raw.mode === "text" || raw.mode === "vision"
+              ? (raw.mode as "text" | "vision")
+              : null;
+          if (mode) {
+            latestExtractionMode = mode;
+          }
           if (phase) {
             latestServerPhase = phase;
-            emitDebug();
           }
+          if (phase || mode) emitDebug();
           return;
         }
         if (ev.type === "stitch" && ev.data && typeof ev.data === "object") {

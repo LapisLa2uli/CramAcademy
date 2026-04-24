@@ -173,10 +173,12 @@ export async function runLocalOllamaAnalyze(
 
   const debugCb = options.onExtractionDebug;
   const snap = createEmptyExtractionDebugSnapshot();
+  snap.extractionMode = "vision";
   const activeVision = new Map<string, ExtractionActiveVisionTask>();
 
   const emitDebug = () => {
     debugCb?.({
+      extractionMode: snap.extractionMode,
       raster: snap.raster,
       activeVision: [...activeVision.values()],
       serverPhase: snap.serverPhase,
