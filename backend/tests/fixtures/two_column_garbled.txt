@@ -1,0 +1,6 @@
+1. Left column question stem starts here
+A) left opt A
+B) left opt B
+6. Right column question stem appears before left in raw extraction
+A) right opt A
+B) right opt B

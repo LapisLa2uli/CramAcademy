@@ -11,9 +11,10 @@ from services.extraction.ap_extraction_validate import validate_extraction_struc
 from services.extraction.consistency import collect_warnings
 from services.extraction.cross_page import build_page_summaries, cross_page_warning_pass
 from services.extraction.normalize import merge_page_results
-from services.extraction.openai_extract import extract_page
+from services.extraction.openai_extract import extract_page, extract_page_from_text
 from services.extraction.pdf_document_profile import build_document_profile
 from services.extraction.pdf_text_hint import extract_pdf_page_texts
+from services.extraction.text_only_mode import assess_pdf_text_layer
 from services.extraction.render_pdf import (
     image_file_to_png_bytes,
     pdf_bytes_to_png_pages,
@@ -102,6 +103,25 @@ async def iter_analyze(
         or (settings.ai_provider == "ollama" and settings.extraction_ollama_two_stage_default)
     ) and not layout_only
 
+    use_text_only = False
+    text_only_warnings: list[str] = []
+    if (
+        settings.extraction_text_only_enabled
+        and len(files) == 1
+        and _is_pdf(files[0][1])
+        and not layout_only
+        and pdf_text_by_page
+    ):
+        assess = assess_pdf_text_layer(
+            files[0][1], pdf_text_by_page, max_pages=limit
+        )
+        use_text_only = assess.use_text_only
+        text_only_warnings.extend(assess.warnings)
+        if use_text_only:
+            text_only_warnings.append(
+                "Text-only extraction mode used (no vision model calls)."
+            )
+
     pages = _prepare_pages_from_uploads(
         files, max_pages=limit, max_edge=max_edge, dpi=dpi_val
     )
@@ -159,16 +179,26 @@ async def iter_analyze(
                 if doc_profile is not None and idx < len(doc_profile.pages)
                 else None
             )
-            raw, wlocal2 = await extract_page(
-                idx,
-                png,
-                pdf_page_text=ptext,
-                document_profile_hint=prof_hint,
-                document_family=fam,
-                page_pdf_role=role,
-                two_stage=effective_two_stage,
-                layout_only=layout_only,
-            )
+            if use_text_only and ptext:
+                raw, wlocal2 = await extract_page_from_text(
+                    idx,
+                    page_text=ptext,
+                    previous_page_text=pdf_text_by_page.get(idx - 1),
+                    next_page_text=pdf_text_by_page.get(idx + 1),
+                    document_profile_hint=prof_hint,
+                    use_llm=settings.extraction_text_only_use_llm,
+                )
+            else:
+                raw, wlocal2 = await extract_page(
+                    idx,
+                    png,
+                    pdf_page_text=ptext,
+                    document_profile_hint=prof_hint,
+                    document_family=fam,
+                    page_pdf_role=role,
+                    two_stage=effective_two_stage,
+                    layout_only=layout_only,
+                )
         wlocal.extend(wlocal2)
         return (idx, raw, png, w, h, wlocal)
 
@@ -179,6 +209,7 @@ async def iter_analyze(
 
     page_results: list[tuple[int, dict[str, Any], bytes, int, int]] = []
     warn: list[str] = []
+    warn.extend(text_only_warnings)
     done = 0
     for fut in asyncio.as_completed(tasks):
         try:

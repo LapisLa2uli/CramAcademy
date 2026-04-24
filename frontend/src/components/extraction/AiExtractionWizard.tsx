@@ -175,6 +175,15 @@ export default function AiExtractionWizard() {
 
   const pages: ExtractionPage[] = data?.pages ?? [];
   const currentPage = pages[pageIdx] ?? null;
+  const usedTextOnlyMode = useMemo(
+    () =>
+      Boolean(
+        data?.warnings.some((w) =>
+          w.toLowerCase().includes("text-only extraction mode used")
+        )
+      ),
+    [data?.warnings]
+  );
 
   const localOllamaInfo = useMemo(() => {
     if (!isClientOllamaExtractionEnabled()) return null;
@@ -791,6 +800,17 @@ export default function AiExtractionWizard() {
 
       {step === "review" && data && (
         <>
+          {usedTextOnlyMode && (
+            <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+              <p className="font-medium">
+                Text-only extraction active (no vision model calls)
+              </p>
+              <p className="mt-1 text-sky-800">
+                Grouping came from embedded PDF text with text LLM/heuristics. Re-run
+                page vision if graphs or image-heavy questions look incomplete.
+              </p>
+            </div>
+          )}
           {data.warnings.length > 0 && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               <p className="font-medium mb-1">Consistency checks</p>

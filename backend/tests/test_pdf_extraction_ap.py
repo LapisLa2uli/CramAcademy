@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from schemas.extraction import (
     ExtractionQuestionDraft,
@@ -20,6 +21,11 @@ from services.extraction.ap_extraction_validate import validate_extraction_struc
 from services.extraction.json_extract import parse_json_from_model_output
 from services.extraction.openai_extract import _validate_page_payload
 from services.extraction.pdf_document_profile import build_document_profile, classify_page_text
+from services.extraction.text_only_extract import (
+    build_text_only_fallback_payload,
+    extract_questions_heuristic,
+)
+from services.extraction.text_only_mode import assess_pdf_text_layer
 
 
 class TestFingerprint(unittest.TestCase):
@@ -175,3 +181,49 @@ class TestValidate(unittest.TestCase):
         w, retry = validate_extraction_structure(sets, profile)
         self.assertTrue(any("no options" in x.lower() for x in w))
         self.assertIn(0, retry)
+
+
+class TestTextOnlyHeuristics(unittest.TestCase):
+    def test_extract_questions_mcq(self) -> None:
+        txt = "\n".join(
+            [
+                "1. Which value is correct?",
+                "A) one",
+                "B) two",
+                "2. Explain your answer.",
+            ]
+        )
+        qs = extract_questions_heuristic(txt)
+        self.assertEqual(len(qs), 2)
+        self.assertEqual(qs[0]["type"], "mcq")
+        self.assertEqual(len(qs[0]["options"]), 2)
+        self.assertEqual(qs[1]["type"], "frq")
+
+    def test_build_fallback_payload_empty(self) -> None:
+        payload, warnings = build_text_only_fallback_payload("random header text only")
+        self.assertEqual(payload.get("sets"), [])
+        self.assertTrue(any("no questions" in w.lower() for w in warnings))
+
+    def test_fixture_two_column_garbled(self) -> None:
+        fixture = (
+            Path(__file__).resolve().parent / "fixtures" / "two_column_garbled.txt"
+        ).read_text(encoding="utf-8")
+        payload, _warnings = build_text_only_fallback_payload(fixture)
+        sets = payload.get("sets")
+        self.assertTrue(isinstance(sets, list) and len(sets) == 1)
+        questions = sets[0].get("questions")
+        self.assertTrue(isinstance(questions, list))
+        self.assertEqual(questions[0]["question_index"], 1)
+        self.assertEqual(questions[1]["question_index"], 6)
+
+
+class TestTextOnlyAssessment(unittest.TestCase):
+    def test_assess_text_layer_coverage(self) -> None:
+        pdf_stub = b"%PDF-1.7\nstub"
+        texts = {
+            0: "1. A long enough line " * 20,
+            1: "2. Another long enough line " * 20,
+            2: "",
+        }
+        result = assess_pdf_text_layer(pdf_stub, texts, max_pages=3)
+        self.assertGreater(result.coverage_ratio, 0.6)

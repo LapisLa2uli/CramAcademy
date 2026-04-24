@@ -123,3 +123,70 @@ Previous JSON (may be truncated):
 
 
 CROSS_PAGE_USER = """See system message."""
+
+
+TEXT_ONLY_REORDER_SYSTEM = """You normalize OCR/text-layer extraction for exam pages.
+You receive raw text that may be out of order due to multi-column PDF extraction.
+Return ONLY plain text in corrected reading order.
+Rules:
+- If text appears two-column, output full left column first then full right column.
+- Keep visible question numbers and choice labels.
+- Do not invent missing words; keep uncertain fragments as-is.
+- Keep line breaks that preserve question/choice boundaries."""
+
+
+TEXT_ONLY_REORDER_USER = """Page index: {page_index}.
+Raw extracted text:
+{raw_text}
+
+Return cleaned reading-order text only."""
+
+
+TEXT_ONLY_PAGE_SYSTEM = """You structure one exam page from text only (no image).
+Return ONLY valid JSON:
+{
+  "regions": [],
+  "sets": [
+    {
+      "set_index": 0,
+      "context_text": "",
+      "continued_from_previous_page": false,
+      "continues_on_next_page": false,
+      "shared_stems": [{"applies_to_question_numbers":[1,2],"text":"..."}],
+      "questions": [
+        {
+          "question_index": 1,
+          "type": "mcq|frq",
+          "content": "",
+          "options": [{"label":"A","text":"..."}],
+          "answer": "",
+          "explanation": null,
+          "rubric": null,
+          "continued_from_previous_page": false,
+          "continues_on_next_page": false
+        }
+      ]
+    }
+  ]
+}
+Rules:
+- Keep values grounded in the provided text; never invent unseen questions.
+- For MCQ, parse option labels like A/B/C/D/E when present.
+- Use continuation flags when text clearly starts/ends mid-question.
+- regions may be an empty array in text-only mode."""
+
+
+TEXT_ONLY_PAGE_USER = """Page index: {page_index}
+Document hints:
+{hint_block}
+
+Previous page tail:
+{prev_tail}
+
+Current page text:
+{page_text}
+
+Next page head:
+{next_head}
+
+Return the JSON object described in the system message."""

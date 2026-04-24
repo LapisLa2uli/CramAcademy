@@ -9,6 +9,7 @@ from openai import AsyncOpenAI
 
 from config import get_settings
 from services.extraction.json_extract import parse_json_from_model_output
+from services.extraction.text_only_extract import build_text_only_fallback_payload
 from prompts.extraction import (
     FIX_OUTPUT_SYSTEM,
     FIX_OUTPUT_USER,
@@ -16,6 +17,10 @@ from prompts.extraction import (
     LAYOUT_ONLY_USER,
     PAGE_EXTRACTION_SYSTEM,
     PAGE_EXTRACTION_USER,
+    TEXT_ONLY_PAGE_SYSTEM,
+    TEXT_ONLY_PAGE_USER,
+    TEXT_ONLY_REORDER_SYSTEM,
+    TEXT_ONLY_REORDER_USER,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,6 +45,15 @@ _LAYOUT_SCHEMA = {
 def _extraction_model() -> str:
     s = get_settings()
     return (s.extraction_model or "").strip() or s.openai_model
+
+
+def _text_only_model() -> str:
+    s = get_settings()
+    if (s.extraction_text_only_model or "").strip():
+        return s.extraction_text_only_model.strip()
+    if s.ai_provider == "ollama":
+        return (s.ollama_model or "").strip() or "llama3"
+    return s.openai_model
 
 
 def _make_client() -> AsyncOpenAI:
@@ -205,6 +219,135 @@ async def _chat(
         snippet = str(content).strip()[:400].replace("\n", " ")
         logger.warning("Vision response was not valid JSON after repair (snippet): %s", snippet)
     return parsed
+
+
+async def _chat_text(
+    client: AsyncOpenAI,
+    model: str,
+    system: str,
+    user_text: str,
+    response_format: dict[str, Any],
+) -> dict[str, Any] | None:
+    try:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_text},
+            ],
+            temperature=0.1,
+            response_format=response_format,
+        )
+    except Exception as e:
+        if response_format.get("type") == "json_schema":
+            logger.warning(
+                "Text schema response_format failed (%s); retrying json_object.", e
+            )
+            return await _chat_text(
+                client, model, system, user_text, {"type": "json_object"}
+            )
+        raise
+
+    content = response.choices[0].message.content
+    parsed = _parse_json_content(content)
+    if parsed is None and content and str(content).strip():
+        snippet = str(content).strip()[:400].replace("\n", " ")
+        logger.warning(
+            "Text extraction response was not valid JSON after repair (snippet): %s",
+            snippet,
+        )
+    return parsed
+
+
+async def _chat_reorder_text(
+    client: AsyncOpenAI, model: str, page_index: int, raw_text: str
+) -> str:
+    try:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": TEXT_ONLY_REORDER_SYSTEM},
+                {
+                    "role": "user",
+                    "content": TEXT_ONLY_REORDER_USER.format(
+                        page_index=page_index, raw_text=raw_text[:15000]
+                    ),
+                },
+            ],
+            temperature=0.0,
+        )
+        out = response.choices[0].message.content
+        return str(out).strip() if out else raw_text
+    except Exception:
+        return raw_text
+
+
+async def extract_page_from_text(
+    page_index: int,
+    *,
+    page_text: str,
+    previous_page_text: str | None = None,
+    next_page_text: str | None = None,
+    document_profile_hint: str | None = None,
+    use_llm: bool = True,
+) -> tuple[dict[str, Any], list[str]]:
+    warnings: list[str] = []
+    text = (page_text or "").strip()
+    if not text:
+        return {"regions": [], "sets": []}, warnings
+
+    t0 = time.perf_counter()
+    structured: dict[str, Any] | None = None
+
+    if use_llm:
+        client = _make_client()
+        model = _text_only_model()
+        cleaned = await _chat_reorder_text(client, model, page_index, text)
+        hint_block = document_profile_hint or "(none)"
+        prev_tail = (previous_page_text or "").strip()[-1200:]
+        next_head = (next_page_text or "").strip()[:1200]
+        user = TEXT_ONLY_PAGE_USER.format(
+            page_index=page_index,
+            hint_block=hint_block,
+            prev_tail=prev_tail or "(none)",
+            page_text=cleaned[:14000],
+            next_head=next_head or "(none)",
+        )
+        try:
+            structured = await _chat_text(
+                client,
+                model,
+                TEXT_ONLY_PAGE_SYSTEM,
+                user,
+                _response_format_full(),
+            )
+        except Exception as e:
+            warnings.append(f"Page {page_index}: text LLM structuring failed ({e}).")
+
+    if structured is None:
+        structured, fallback_warnings = build_text_only_fallback_payload(text)
+        warnings.extend([f"Page {page_index}: {w}" for w in fallback_warnings])
+
+    if not isinstance(structured.get("regions"), list):
+        structured["regions"] = []
+    if not isinstance(structured.get("sets"), list):
+        structured["sets"] = []
+
+    issues = _validate_page_payload(structured)
+    if issues:
+        warnings.append(
+            f"Page {page_index}: text-only validation issues: {'; '.join(issues[:2])}"
+        )
+
+    elapsed = time.perf_counter() - t0
+    logger.info(
+        "text-only extraction page=%s model=%s seconds=%.2f sets=%s",
+        page_index,
+        _text_only_model() if use_llm else "heuristic",
+        elapsed,
+        len(structured.get("sets") or []),
+    )
+    return structured, warnings
 
 
 async def _chat_fix(

@@ -57,6 +57,14 @@ class Settings(BaseSettings):
     # Run layout-first pass by default when using Ollama (more reliable JSON on page 2).
     extraction_ollama_two_stage_default: bool = True
     extraction_pdf_text_hint: bool = True
+    extraction_text_only_enabled: bool = True
+    extraction_text_only_use_llm: bool = True
+    extraction_text_only_model: str = ""
+    extraction_text_only_min_chars_per_page: int = 220
+    extraction_text_only_min_coverage_ratio: float = 0.65
+    extraction_text_only_max_image_pages_ratio: float = 0.35
+    extraction_text_only_force: bool = False
+    extraction_text_only_disable: bool = False
     extraction_cross_page_warnings: bool = True
     # Skip vision on detected answer sheets, directions, keys, scoring (AP-style PDF text layer).
     extraction_skip_noncontent_pages: bool = True
