@@ -7,24 +7,51 @@ logger = logging.getLogger(__name__)
 
 
 def extract_pdf_page_texts(pdf_bytes: bytes, *, max_pages: int) -> dict[int, str]:
+    # Primary path: pypdf text layer.
     try:
         from pypdf import PdfReader
     except ImportError:
-        logger.warning("pypdf not installed; PDF text hints disabled.")
+        reader = None
+    out: dict[int, str] = {}
+    if reader is not None:
+        try:
+            doc = PdfReader(BytesIO(pdf_bytes))
+            n = min(len(doc.pages), max_pages)
+            for i in range(n):
+                try:
+                    t = doc.pages[i].extract_text() or ""
+                except Exception:
+                    t = ""
+                t = t.strip()
+                if t:
+                    out[i] = t[:12000]
+        except Exception as e:
+            logger.warning("pypdf text extraction failed: %s", e)
+    if out:
+        return out
+
+    # Fallback path: pypdfium2 textpage extraction.
+    try:
+        import pypdfium2 as pdfium
+    except Exception:
+        logger.warning("pypdf unavailable and pypdfium2 text fallback unavailable.")
         return {}
 
-    out: dict[int, str] = {}
     try:
-        reader = PdfReader(BytesIO(pdf_bytes))
-        n = min(len(reader.pages), max_pages)
+        pdf = pdfium.PdfDocument(pdf_bytes)
+        n = min(len(pdf), max_pages)
         for i in range(n):
             try:
-                t = reader.pages[i].extract_text() or ""
+                page = pdf[i]
+                tp = page.get_textpage()
+                t = (tp.get_text_range() or "").strip()
+                tp.close()
+                page.close()
             except Exception:
                 t = ""
-            t = t.strip()
             if t:
                 out[i] = t[:12000]
+        pdf.close()
     except Exception as e:
-        logger.warning("PDF text extraction failed: %s", e)
+        logger.warning("pypdfium2 text fallback failed: %s", e)
     return out

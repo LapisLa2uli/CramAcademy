@@ -110,7 +110,6 @@ async def iter_analyze(
         and len(files) == 1
         and _is_pdf(files[0][1])
         and not layout_only
-        and pdf_text_by_page
     ):
         assess = assess_pdf_text_layer(
             files[0][1], pdf_text_by_page, max_pages=limit

@@ -29,12 +29,12 @@ import {
 import {
   getLocalOllamaConfig,
   getLocalOllamaRasterDefaults,
-  isClientOllamaExtractionEnabled,
 } from "@/lib/extraction/localOllamaAnalyze";
 import { localOllamaBlockedFromHttpsPage } from "@/lib/extraction/ollamaOpenAI";
 
 type Step = "upload" | "analyze" | "review" | "done";
 type ExtractionMode = "full" | "layout";
+type ExtractionRuntimeMode = "server" | "local";
 
 function visionStepLabel(step: ExtractionVisionStep): string {
   switch (step) {
@@ -180,6 +180,7 @@ export default function AiExtractionWizard() {
   const [layoutTemplates, setLayoutTemplates] = useState<LayoutSetTemplate[]>([]);
   const [layoutAssignments, setLayoutAssignments] = useState<Record<string, string | null>>({});
   const [layoutManualAnswers, setLayoutManualAnswers] = useState<Record<string, string>>({});
+  const [runtimeMode, setRuntimeMode] = useState<ExtractionRuntimeMode>("server");
 
   const pages: ExtractionPage[] = data?.pages ?? [];
   const currentPage = pages[pageIdx] ?? null;
@@ -193,10 +194,7 @@ export default function AiExtractionWizard() {
     [data?.warnings]
   );
 
-  const localOllamaInfo = useMemo(() => {
-    if (!isClientOllamaExtractionEnabled()) return null;
-    return getLocalOllamaConfig();
-  }, []);
+  const localOllamaInfo = useMemo(() => getLocalOllamaConfig(), []);
 
   const localOllamaHttpsBlocked = useMemo(() => {
     if (!localOllamaInfo) return false;
@@ -206,8 +204,8 @@ export default function AiExtractionWizard() {
   const extractionDebugEnabled = useMemo(
     () =>
       isExtractionDebugUiEnabled() ||
-      (isClientOllamaExtractionEnabled() && extractionDebugUserToggle),
-    [extractionDebugUserToggle]
+      (runtimeMode === "local" && extractionDebugUserToggle),
+    [extractionDebugUserToggle, runtimeMode]
   );
 
   const handleSlotAssign = useCallback(
@@ -252,8 +250,9 @@ export default function AiExtractionWizard() {
     setStep("analyze");
     try {
       const res = await api.extraction.analyze(files, {
+        runtime_mode: runtimeMode,
         max_pages: 24,
-        ...(isClientOllamaExtractionEnabled()
+        ...(runtimeMode === "local"
           ? { dpi: localOllamaDpi, page_concurrency: localOllamaConcurrency }
           : { dpi: 160 }),
         high_accuracy: highAccuracy,
@@ -314,7 +313,8 @@ export default function AiExtractionWizard() {
     try {
       const f = await pagePngToFile(currentPage);
       const res = await api.extraction.reanalyzePage(f, {
-        ...(isClientOllamaExtractionEnabled()
+        runtime_mode: runtimeMode,
+        ...(runtimeMode === "local"
           ? { dpi: localOllamaDpi, page_concurrency: localOllamaConcurrency }
           : { dpi: 160 }),
         high_accuracy: highAccuracy,
@@ -377,6 +377,7 @@ export default function AiExtractionWizard() {
     pageIdx,
     pages.length,
     extractionMode,
+    runtimeMode,
     localOllamaDpi,
     localOllamaConcurrency,
     extractionDebugEnabled,
@@ -569,7 +570,7 @@ export default function AiExtractionWizard() {
 
       {step === "upload" && (
         <div className="card p-6 space-y-4">
-          {localOllamaInfo ? (
+          {runtimeMode === "local" ? (
             <div className="space-y-2">
               {localOllamaHttpsBlocked ? (
                 <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
@@ -597,6 +598,39 @@ export default function AiExtractionWizard() {
               </div>
             </div>
           ) : null}
+          <div className="space-y-2">
+            <span className="font-medium text-gray-900 text-sm">Processing target</span>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="runtime-mode"
+                className="mt-1"
+                checked={runtimeMode === "server"}
+                onChange={() => setRuntimeMode("server")}
+              />
+              <span>
+                <span className="font-medium text-gray-900">Server extraction</span>
+                <span className="block text-gray-600 text-xs mt-0.5">
+                  Uses API analyze-stream (supports backend text-only mode and vision fallback).
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="runtime-mode"
+                className="mt-1"
+                checked={runtimeMode === "local"}
+                onChange={() => setRuntimeMode("local")}
+              />
+              <span>
+                <span className="font-medium text-gray-900">Local Ollama extraction</span>
+                <span className="block text-gray-600 text-xs mt-0.5">
+                  Runs in this browser against your local Ollama endpoint.
+                </span>
+              </span>
+            </label>
+          </div>
           <input
             type="file"
             multiple
@@ -638,7 +672,7 @@ export default function AiExtractionWizard() {
                 </span>
               </label>
             </div>
-            {localOllamaInfo ? (
+            {runtimeMode === "local" ? (
               <div className="rounded-lg border border-gray-200 bg-gray-50/80 px-3 py-2 space-y-3">
                 <p className="font-medium text-gray-900 text-sm">Local Ollama rendering</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -761,7 +795,7 @@ export default function AiExtractionWizard() {
         <div className="card p-8 space-y-4 max-w-lg">
           <p className="text-gray-800 font-medium">Analyzing pages…</p>
           <p className="text-sm text-gray-500">
-            {localOllamaInfo ? (
+            {runtimeMode === "local" ? (
               <>
                 The bar advances for each <strong>rasterized</strong> page, then for each{" "}
                 <strong>Ollama</strong> call (layout pass, main extraction, optional fix). It should move
@@ -770,7 +804,8 @@ export default function AiExtractionWizard() {
               </>
             ) : (
               <>
-                Vision model runs in parallel (with a concurrency cap). Progress updates as each page finishes.
+                Server extraction runs via analyze-stream. Text-only mode may activate for text PDFs; otherwise
+                vision runs with server concurrency limits.
               </>
             )}
           </p>

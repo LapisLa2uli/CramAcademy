@@ -428,6 +428,7 @@ export const api = {
     async analyze(
       files: File[],
       opts?: {
+        runtime_mode?: "server" | "local";
         max_pages?: number;
         dpi?: number;
         /** Local Ollama only: parallel pages (1–8). */
@@ -445,8 +446,9 @@ export const api = {
     ): Promise<ExtractionAnalyzeResponse> {
       const maxPages = opts?.max_pages ?? 24;
       const noClientTimeout = opts?.disableClientTimeout === true;
+      const runtimeMode = opts?.runtime_mode ?? "server";
 
-      if (isClientOllamaExtractionEnabled()) {
+      if (runtimeMode === "local") {
         const maxTotalMs = extractionTimeoutMs(files, maxPages);
         const signal = noClientTimeout ? undefined : AbortSignal.timeout(maxTotalMs);
         return runLocalOllamaAnalyze(files, {
@@ -857,6 +859,7 @@ export const api = {
     async reanalyzePage(
       file: File,
       opts?: {
+        runtime_mode?: "server" | "local";
         dpi?: number;
         page_concurrency?: number;
         high_accuracy?: boolean;
@@ -866,7 +869,8 @@ export const api = {
         onExtractionDebug?: (snapshot: ExtractionDebugSnapshot) => void;
       }
     ): Promise<ExtractionAnalyzeResponse> {
-      if (isClientOllamaExtractionEnabled()) {
+      const runtimeMode = opts?.runtime_mode ?? "server";
+      if (runtimeMode === "local") {
         const maxTotalMs = extractionTimeoutMs([file], 1);
         const signal = AbortSignal.timeout(maxTotalMs);
         return runLocalOllamaAnalyze([file], {
